@@ -12,8 +12,54 @@ function localDate(){return new Intl.DateTimeFormat('en-CA',{timeZone:'Europe/Du
 function minsNow(){let p=new Intl.DateTimeFormat('en-GB',{timeZone:'Europe/Dublin',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).format(new Date()).split(':');return +p[0]*60 + +p[1]}
 function tmins(t){let [h,m]=t.split(':');return +h*60 + +m}
 async function bridge(){app.innerHTML=`<main class="shell">${top()}<div id="hunger"></div><div class="grid"><section class="panel hero"><span class="muted">CURRENTLY ABOARD:</span><h1>${E(profile?.display_name)}</h1><div>Why don't starships ever get lost?<br><span class="muted">They always follow their enterprise.</span></div></section><section class="panel card cats"><div class="section-title">The children</div><div id="cats" class="catrow">Scanning…</div></section><section class="panel card notes"><div class="section-title">Sticky notes</div><div class="sticky">There is cake in the fridge.<br><br>This is not a drill.</div></section><section class="panel card agenda"><div class="section-title">Today</div><div class="row"><span>TAKE YOUR DRUGS</span><span>!</span></div></section><section class="panel card ops"><div class="section-title">House status</div><div class="muted">No disasters currently detected. Suspicious.</div></section></div></main><button id="plus" class="plus">+</button><section id="menu" class="panel menu" hidden><button>NOTE</button><button>TASK</button><button>PLAN</button><button>STUFF</button><button>MONEY</button></section>${nav()}`;wire();plus.onclick=()=>menu.hidden=!menu.hidden;await cats()}
-async function cats(){let cs=(await supabase.from('cats').select('*,cat_feeding_schedules(*)').eq('household_id',household.id).order('name')).data||[];let fs=(await supabase.from('cat_feedings').select('*').eq('household_id',household.id).eq('feeding_date',localDate()).order('recorded_at',{ascending:false})).data||[];let users=[...new Set(fs.map(x=>x.recorded_by))],names={};if(users.length){for(let p of (await supabase.from('profiles').select('user_id,display_name').in('user_id',users)).data||[])names[p.user_id]=p.display_name}
-let overdue=false;cats.innerHTML=cs.map(c=>{let schedules=(c.cat_feeding_schedules||[]).sort((a,b)=>a.feeding_time.localeCompare(b.feeding_time));return `<article class="cat"><div class="catname">${E(c.name)}</div><div class="muted">${E(c.breed)}</div><div class="bowls">${schedules.map(s=>{let f=fs.find(x=>x.cat_id===c.id&&x.schedule_id===s.id),late=!f&&minsNow()>tmins(s.feeding_time)+60;if(late)overdue=true;let cl=f?f.status:late?'overdue':'',txt=f?f.status.toUpperCase():late?'HUNGRY':'○',stamp=f?`<div class="stamp">${E(names[f.recorded_by]||'Crew')} · ${new Date(f.recorded_at).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</div>`:'';return `<button class="bowl ${cl}" data-cat="${c.id}" data-sch="${s.id}" data-time="${s.feeding_time.slice(0,5)}">${s.feeding_time.slice(0,5)}<br>${txt}${stamp}</button>`}).join('')}</div></article>`}).join('');hunger.innerHTML=overdue?`<div class="alert">THE CHILDREN HUNGER. THIS IS NOT A DRILL.</div>`:'';document.querySelectorAll('.bowl').forEach(b=>b.onclick=()=>feedModal(b.dataset.cat,b.dataset.sch,b.dataset.time))}
+async function cats(){
+  const catsEl=document.querySelector('#cats')
+  const hungerEl=document.querySelector('#hunger')
+  if(!catsEl)return
+  catsEl.innerHTML='<span class="muted">Scanning feline frequencies…</span>'
+  if(hungerEl) hungerEl.innerHTML=''
+
+  try{
+    const cr=await supabase.from('cats').select('*,cat_feeding_schedules(*)').eq('household_id',household.id).order('name')
+    if(cr.error) throw new Error(`cats query: ${cr.error.message}`)
+    const cs=cr.data||[]
+    if(!cs.length){
+      catsEl.innerHTML='<div class="error"><b>NO CATS RETURNED.</b><br>Supabase answered, but this household returned zero cats.</div>'
+      return
+    }
+
+    const fr=await supabase.from('cat_feedings').select('*').eq('household_id',household.id).eq('feeding_date',localDate()).order('recorded_at',{ascending:false})
+    if(fr.error) throw new Error(`cat_feedings query: ${fr.error.message}`)
+    const fs=fr.data||[]
+
+    const users=[...new Set(fs.map(x=>x.recorded_by).filter(Boolean))],names={}
+    if(users.length){
+      const pr=await supabase.from('profiles').select('user_id,display_name').in('user_id',users)
+      if(pr.error) throw new Error(`profiles query: ${pr.error.message}`)
+      for(const x of pr.data||[]) names[x.user_id]=x.display_name
+    }
+
+    let overdue=false
+    catsEl.innerHTML=cs.map(c=>{
+      const schedules=(c.cat_feeding_schedules||[]).sort((a,b)=>a.feeding_time.localeCompare(b.feeding_time))
+      const bowls=schedules.length?schedules.map(s=>{
+        const f=fs.find(x=>x.cat_id===c.id&&x.schedule_id===s.id)
+        const late=!f&&minsNow()>tmins(s.feeding_time)+60
+        if(late)overdue=true
+        const cl=f?f.status:late?'overdue':'',txt=f?f.status.toUpperCase():late?'HUNGRY':'○'
+        const stamp=f?`<div class="stamp">${E(names[f.recorded_by]||'Crew')} · ${new Date(f.recorded_at).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</div>`:''
+        return `<button class="bowl ${cl}" data-cat="${c.id}" data-sch="${s.id}" data-time="${s.feeding_time.slice(0,5)}">${s.feeding_time.slice(0,5)}<br>${txt}${stamp}</button>`
+      }).join(''):`<div class="error">No feeding schedule returned for ${E(c.name)}.</div>`
+      return `<article class="cat"><div class="catname">${E(c.name)}</div><div class="muted">${E(c.breed)}</div><div class="bowls">${bowls}</div></article>`
+    }).join('')
+
+    if(hungerEl) hungerEl.innerHTML=overdue?'<div class="alert">THE CHILDREN HUNGER. THIS IS NOT A DRILL.</div>':''
+    document.querySelectorAll('.bowl').forEach(b=>b.onclick=()=>feedModal(b.dataset.cat,b.dataset.sch,b.dataset.time))
+  }catch(error){
+    console.error('THE BRIDGE CAT DIAGNOSTIC:',error)
+    catsEl.innerHTML=`<div class="error"><b>FELINE SCANNER MALFUNCTION.</b><br><br>${E(error?.message||error)}<br><br><span class="muted">Screenshot this message and send it to me.</span></div>`
+  }
+}
 function feedModal(cat,sch,time){let wrap=document.createElement('div');wrap.className='modalWrap';wrap.innerHTML=`<section class="panel modal"><div class="section-title">Feeding report · ${E(time)}</div><p>What happened?</p><div class="statusBtns"><button data-s="fed">FED</button><button data-s="partial">PARTIAL</button><button data-s="refused">REFUSED</button><button data-s="other">OTHER</button></div><div class="field"><label>Optional note</label><textarea id="fn"></textarea></div><button id="cancel" class="ghost">Cancel</button><p id="fe" class="error"></p></section>`;document.body.appendChild(wrap);cancel.onclick=()=>wrap.remove();wrap.querySelectorAll('[data-s]').forEach(b=>b.onclick=async()=>{let r=await supabase.from('cat_feedings').insert({household_id:household.id,cat_id:cat,schedule_id:sch,feeding_date:localDate(),status:b.dataset.s,note:fn.value||null,recorded_by:session.user.id});if(r.error)return fe.textContent=r.error.message;wrap.remove();cats()})}
 async function crew(){app.innerHTML=`<main class="shell">${top('Crew')}<section class="panel invite"><div class="section-title">Household invite code</div><div class="code">${E(household.invite_code)}</div></section><h1 class="pageTitle">Crew Manifest</h1><div id="cg" class="crewgrid"></div></main>${nav()}`;wire();let ms=(await supabase.from('household_members').select('user_id').eq('household_id',household.id)).data||[],ids=ms.map(x=>x.user_id),ps=ids.length?(await supabase.from('profiles').select('*').in('user_id',ids)).data||[]:[],cs=(await supabase.from('cats').select('*').eq('household_id',household.id)).data||[];cg.innerHTML=[...ps.map(p=>`<article class="panel crewcard"><div class="crewhead"><div class="avatar">${E((p.display_name||'?')[0])}</div><div><div class="crewname">${E(p.display_name)}</div><div class="muted">${E(p.nickname||'Human')}</div></div></div></article>`),...cs.map(c=>`<article class="panel crewcard"><div class="crewname">${E(c.name)}</div><div class="muted">${E(c.breed)}</div></article>`)].join('')}
 function placeholder(t){app.innerHTML=`<main class="shell">${top(t)}<section class="panel card"><h1 class="pageTitle">${E(t)}</h1><p class="muted">Coming soon.</p></section></main>${nav()}`;wire()}
