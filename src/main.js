@@ -30,7 +30,7 @@ const timeText=x=>x?new Date(x).toLocaleTimeString('en-IE',{hour:'2-digit',minut
 function overdue(t){if(!t.due_at||t.status==='done')return'';const h=(Date.now()-new Date(t.due_at))/36e5;if(h<=0)return'';if(h<6)return'<div class="over1">Temporal hiccup detected.</div>';if(h<24)return'<div class="over2">This has become mildly embarrassing.</div>';if(h<72)return'<div class="over3">TEMPORAL ANOMALY DETECTED.</div>';return'<div class="over4">WE HAVE ABANDONED THE TIMELINE.</div>'}
 
 async function bridge(){
- app.innerHTML=`<main class="shell">${top()}<div id="hunger"></div><div class="grid"><section class="panel hero"><span class="muted">CURRENTLY ABOARD:</span><h1>${E(profile?.display_name)}</h1><div>Why don't starships ever get lost?<br><span class="muted">They always follow their enterprise.</span></div></section><section class="panel card cats"><div class="section-title">The children</div><div id="cats" class="catrow">Scanning…</div></section><section class="panel card notes"><div class="section-title">Sticky notes</div><div class="sticky">There is cake in the fridge.<br><br>This is not a drill.</div></section><section class="panel card agenda"><div class="section-title">Today</div><div id="todayTasks" class="muted">Consulting the timeline…</div></section><section class="panel card ops"><div class="section-title">Upcoming tribute</div><div id="bridgeBills" class="muted">Sweeping financial radar…</div></section><section class="panel card ops"><div class="section-title">Notes on the console</div><div id="bridgeNotes" class="bridgeNotes"><span class="muted">Checking the post-its…</span></div></section></div></main><button id="plus" class="plus">+</button><section id="menu" class="panel menu" hidden><button id="quickNote">NOTE</button><button id="quickTask">TASK</button><button>PLAN</button><button id="quickStuff">STUFF</button><button id="quickMoney">MONEY</button></section>${nav()}`
+ app.innerHTML=`<main class="shell">${top()}<div id="hunger"></div><div class="grid"><section class="panel hero"><span class="muted">CURRENTLY ABOARD:</span><h1>${E(profile?.display_name)}</h1><div>Why don't starships ever get lost?<br><span class="muted">They always follow their enterprise.</span></div></section><section class="panel card cats"><div class="section-title">The children</div><div id="cats" class="catrow">Scanning…</div></section><section class="panel card agenda"><div class="section-title">Today</div><div id="todayTasks" class="muted">Consulting the timeline…</div></section><section class="panel card ops"><div class="section-title">Upcoming tribute</div><div id="bridgeBills" class="muted">Sweeping financial radar…</div></section><section class="panel card ops"><div class="section-title">Notes on the console</div><div id="bridgeNotes" class="bridgeNotes"><span class="muted">Checking the post-its…</span></div></section></div></main><button id="plus" class="plus">+</button><section id="menu" class="panel menu" hidden><button id="quickNote">NOTE</button><button id="quickTask">TASK</button><button>PLAN</button><button id="quickStuff">STUFF</button><button id="quickMoney">MONEY</button></section>${nav()}`
  wire();q('#plus').onclick=()=>q('#menu').hidden=!q('#menu').hidden;q('#quickTask').onclick=()=>taskModal();q('#quickStuff').onclick=()=>shoppingItemModal();q('#quickMoney').onclick=()=>{active='treasury';render()};q('#quickNote').onclick=()=>noteModal();await Promise.all([loadCats(),bridgeTasks(),bridgeBills(),bridgeNotes()])
 }
 async function bridgeTasks(){const box=q('#todayTasks');if(!box)return;const today=dateKey(new Date()),{data}=await supabase.from('tasks').select('*').eq('household_id',household.id).eq('status','needs_doing').order('due_at');const list=(data||[]).filter(t=>t.due_at&&dateKey(t.due_at)===today);box.innerHTML=list.length?list.slice(0,5).map(t=>`<div class="row"><span>${E(t.title)}</span><span>${t.all_day?'TODAY':timeText(t.due_at)}</span></div>`).join(''):'No disasters currently detected. Probably.'}
@@ -191,6 +191,40 @@ async function shoppingListsModal(){
 
 
 
+
+function contrastText(hex){
+  const h=(hex||'#7d5266').replace('#','')
+  if(h.length!==6)return '#ffffff'
+  const r=parseInt(h.slice(0,2),16),g=parseInt(h.slice(2,4),16),b=parseInt(h.slice(4,6),16)
+  const lum=(0.2126*r+0.7152*g+0.0722*b)/255
+  return lum>0.62?'#0a0a0c':'#ffffff'
+}
+async function signedNoteMedia(path){
+  if(!path)return null
+  const {data,error}=await supabase.storage.from('note-media').createSignedUrl(path,3600)
+  if(error){console.error(error);return null}
+  return data?.signedUrl||null
+}
+async function enrichNoteMedia(notes){
+  return await Promise.all((notes||[]).map(async n=>({
+    ...n,
+    _photoUrl:await signedNoteMedia(n.photo_path),
+    _doodleUrl:await signedNoteMedia(n.doodle_path)
+  })))
+}
+function installLongPress(el,actions){
+  let timer=null,moved=false
+  const open=()=>{actions.classList.add('open');el.setAttribute('aria-expanded','true')}
+  const start=()=>{moved=false;timer=setTimeout(()=>{if(!moved)open()},520)}
+  const clear=()=>{if(timer){clearTimeout(timer);timer=null}}
+  el.addEventListener('pointerdown',start)
+  el.addEventListener('pointermove',()=>{moved=true;clear()})
+  el.addEventListener('pointerup',clear)
+  el.addEventListener('pointercancel',clear)
+  el.addEventListener('contextmenu',e=>{e.preventDefault();open()})
+  el.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();open()}})
+}
+
 const noteEmptyLines=['It’s giving... nothing.','Scanners detect: Fuck all.','This note is 0% note and 100% empty.','Bitch ate and left no crumbs and now wants to BRAG ABOUT IT','Have you got nothing to say to me?','Meow.','Meow-meow','Fucking stoners forgetting what a note is supposed to do...']
 const selfForYou=['Self-obsessed much?','God complex incoming...','Self-Love is impurrtant too....','Noooo, share with the claaass']
 const pinChaos=['The bridge has become a Post-it war crime.','Oh god, they’re swarming us!','We are surrounded by post-its.']
@@ -220,7 +254,7 @@ async function bridgeNotes(){
     const {data,error}=await supabase.from('notes').select('*').eq('household_id',household.id).is('deleted_at',null).is('dismissed_at',null).eq('pinned',true).order('created_at',{ascending:false})
     if(error)throw error
     const mine=(data||[]).filter(n=>!n.recipient_user_id||n.recipient_user_id===session.user.id||n.author_user_id===session.user.id)
-    box.innerHTML=mine.length?mine.slice(0,5).map(n=>`<div class="bridgeMiniNote" style="background:${n.color}33"><b>${n.note_type==='for_you'&&n.recipient_user_id===session.user.id&&!n.opened_at?'SEALED TRANSMISSION':E((n.body||'Doodle').slice(0,90))}</b><div class="muted">from ${E(n.author_name_snapshot)}</div></div>`).join('')+(mine.length>5?`<button id="moreBridgeNotes" class="ghost">+${mine.length-5} MORE NOTES</button>`:''):'<span class="muted">Empy :(</span>'
+    box.innerHTML=mine.length?mine.slice(0,5).map(n=>`<div class="bridgeMiniNote"><b>${n.note_type==='for_you'&&n.recipient_user_id===session.user.id&&!n.opened_at?'SEALED TRANSMISSION':E((n.body||((n.doodle_path||n.photo_path)?'Visual transmission':'Note')).slice(0,90))}</b><div class="muted">from ${E(n.author_name_snapshot)}${n.doodle_path?' · doodle':''}${n.photo_path?' · photo':''}</div></div>`).join('')+(mine.length>5?`<button id="moreBridgeNotes" class="ghost">+${mine.length-5} MORE NOTES</button>`:''):'<span class="muted">Empy :(</span>'
     if(q('#moreBridgeNotes'))q('#moreBridgeNotes').onclick=()=>{active='notes';render()}
   }catch(e){box.textContent='Comms are making a suspicious noise.'}
 }
@@ -236,7 +270,7 @@ async function drawNotes(){
   const stage=q('#notesStage');if(!stage)return
   try{
     const {data,error}=await supabase.from('notes').select('*').eq('household_id',household.id).order('created_at',{ascending:false});if(error)throw error
-    let ns=data||[]
+    let ns=await enrichNoteMedia(data||[])
     if(notesTab==='active')ns=ns.filter(n=>!n.deleted_at&&!n.hoarded_at)
     if(notesTab==='love')ns=ns.filter(n=>!n.deleted_at&&n.hoarded_at)
     if(notesTab==='bin')ns=ns.filter(n=>n.deleted_at)
@@ -253,14 +287,39 @@ function expiryWarning(n){
 }
 function noteCard(n){
   const sealed=n.note_type==='for_you'&&n.recipient_user_id===session.user.id&&!n.opened_at
-  if(sealed){const f=pick(sealedLines);return `<article class="sticky sealedNote" style="background:${n.color}" data-open="${n.id}"><div><div class="sealedMark">✦</div><div class="sealedCopy">${E(f(n.author_name_snapshot))}</div><div class="noteMeta">${dateText(n.created_at)}</div></div></article>`}
+  const noteText=contrastText(n.color)
+  if(sealed){
+    const f=pick(sealedLines)
+    return `<article class="sticky sealedNote" tabindex="0" style="--note-color:${n.color};--note-text:${noteText}" data-open="${n.id}"><div><div class="sealedMark">✦</div><div class="sealedCopy">${E(f(n.author_name_snapshot))}</div><div class="noteMeta">${dateText(n.created_at)}</div></div></article>`
+  }
   const editable=n.author_user_id===session.user.id
   const deleted=!!n.deleted_at
-  return `<article class="sticky ${deleted?'recycleCard':''}" style="background:${n.color}"><div class="noteTop"><div class="noteTo">${n.recipient_name_snapshot?`TO ${E(n.recipient_name_snapshot)}`:'ON THE FRIDGE'}</div><div>${n.pinned?'PINNED':''}</div></div><div class="noteBody">${E(n.body||'')}</div>${n.photo_path?'<div class="noteMeta">PHOTO ATTACHED</div>':''}${n.doodle_path?'<div class="noteMeta">DOODLE ATTACHED</div>':''}${n.needs_action?`<div class="noteReminder">${n.action_completed_at?`✓ QUEST COMPLETED · ${dateText(n.action_completed_at)} ${timeText(n.action_completed_at)}`:'QUEST ACTIVE'}</div>`:''}${n.reminder_at?`<div class="noteReminder">Reminder: ${dateText(n.reminder_at)} · ${timeText(n.reminder_at)}</div>`:''}${expiryWarning(n)}<div class="noteMeta">from ${E(n.author_name_snapshot)} · ${dateText(n.created_at)} ${timeText(n.created_at)}${new Date(n.updated_at)-new Date(n.created_at)>1000?` · edited at ${timeText(n.updated_at)}`:''}</div>
-  <div class="reactionStrip">${reactionSet.map(r=>`<button class="reactionBtn" data-react="${n.id}" data-r="${E(r)}">${E(r)}</button>`).join('')}</div>
-  <div class="noteActions">${!deleted&&editable?`<button data-editnote="${n.id}">EDIT</button>`:''}${!deleted&&!n.hoarded_at?`<button data-pin="${n.id}">${n.pinned?'UNPIN':'PIN THIS BABY'}</button>`:''}${!deleted&&n.recipient_user_id===session.user.id&&!n.dismissed_at?`<button data-dismiss="${n.id}">TRANSMISSION RECEIVED</button>`:''}${!deleted&&!n.hoarded_at?`<button data-hoard="${n.id}">HOARD THIS</button>`:''}${!deleted&&n.needs_action&&!n.action_completed_at?`<button data-quest="${n.id}">QUEST COMPLETED</button>`:''}${!deleted&&!n.captain_log_saved_at?`<button data-lognote="${n.id}">ADD TO CAPTAIN'S LOG</button>`:''}${!deleted?`<button data-thread="${n.id}">COMMENTS</button><button data-history="${n.id}">HISTORY</button>${editable?`<button data-destroy="${n.id}">DESTROY</button>`:''}`:`<button data-restore="${n.id}">RESTORE</button><button data-permadelete="${n.id}">DELETE FOREVER</button>`}</div></article>`
+  const media=`${n._photoUrl?`<img class="noteMedia" src="${E(n._photoUrl)}" alt="Photo attached to note">`:''}${n._doodleUrl?`<img class="noteMedia" src="${E(n._doodleUrl)}" alt="Doodle attached to note">`:''}`
+  return `<article class="sticky ${deleted?'recycleCard':''}" tabindex="0" aria-expanded="false" style="--note-color:${n.color};--note-text:${noteText}">
+    <div class="noteTop"><div class="noteTo">${n.recipient_name_snapshot?`TO ${E(n.recipient_name_snapshot)}`:'ON THE BRIDGE'}</div><div>${n.pinned?'PINNED':''}</div></div>
+    <div class="noteBody">${E(n.body||'')}</div>${media}
+    ${n.needs_action?`<div class="noteReminder">${n.action_completed_at?`✓ QUEST COMPLETED · ${dateText(n.action_completed_at)} ${timeText(n.action_completed_at)}`:'QUEST ACTIVE'}</div>`:''}
+    ${n.reminder_at?`<div class="noteReminder">Reminder: ${dateText(n.reminder_at)} · ${timeText(n.reminder_at)}</div>`:''}
+    ${expiryWarning(n)}
+    <div class="noteMeta">from ${E(n.author_name_snapshot)} · ${dateText(n.created_at)} ${timeText(n.created_at)}${new Date(n.updated_at)-new Date(n.created_at)>1000?` · edited at ${timeText(n.updated_at)}`:''}</div>
+    <div class="reactionStrip">${reactionSet.map(r=>`<button class="reactionBtn" data-react="${n.id}" data-r="${E(r)}">${E(r)}</button>`).join('')}</div>
+    <div class="noteHoldHint">Long press or right-click for note options.</div>
+    <div class="noteActions" data-noteactions="${n.id}">
+      ${!deleted&&editable?`<button data-editnote="${n.id}">EDIT</button>`:''}
+      ${!deleted&&!n.hoarded_at?`<button data-pin="${n.id}">${n.pinned?'UNPIN':'PIN THIS BABY'}</button>`:''}
+      ${!deleted&&n.recipient_user_id===session.user.id&&!n.dismissed_at?`<button data-dismiss="${n.id}">TRANSMISSION RECEIVED</button>`:''}
+      ${!deleted&&!n.hoarded_at?`<button data-hoard="${n.id}">HOARD THIS</button>`:''}
+      ${!deleted&&n.needs_action&&!n.action_completed_at?`<button data-quest="${n.id}">QUEST COMPLETED</button>`:''}
+      ${!deleted&&!n.captain_log_saved_at?`<button data-lognote="${n.id}">ADD TO CAPTAIN'S LOG</button>`:''}
+      ${!deleted?`<button data-thread="${n.id}">COMMENTS</button><button data-history="${n.id}">HISTORY</button>${editable?`<button data-destroy="${n.id}">DESTROY</button>`:''}`:`<button data-restore="${n.id}">RESTORE</button><button data-permadelete="${n.id}">DELETE FOREVER</button>`}
+    </div>
+  </article>`
 }
 function wireNoteCards(ns){
+  qa('.sticky').forEach(card=>{
+    const actions=card.querySelector('[data-noteactions]')
+    if(actions)installLongPress(card,actions)
+  })
   qa('[data-open]').forEach(b=>b.onclick=()=>openForYou(b.dataset.open))
   qa('[data-editnote]').forEach(b=>b.onclick=()=>noteModal(null,b.dataset.editnote))
   qa('[data-pin]').forEach(b=>b.onclick=async()=>{const n=ns.find(x=>x.id===b.dataset.pin);await supabase.from('notes').update({pinned:!n.pinned,updated_at:new Date().toISOString()}).eq('id',n.id);if(!n.pinned){const pinned=ns.filter(x=>x.pinned&&!x.deleted_at).length;if(pinned>=5)toast(pick(pinChaos))}drawNotes();bridgeNotes()})
@@ -278,7 +337,8 @@ function wireNoteCards(ns){
 async function openForYou(id){
   const n=(await supabase.from('notes').select('*').eq('id',id).single()).data;if(!n)return
   await supabase.from('notes').update({opened_at:new Date().toISOString(),updated_at:new Date().toISOString()}).eq('id',id)
-  const w=document.createElement('div');w.className='modalWrap';w.innerHTML=`<section class="panel modal" style="background:${n.color}"><div class="section-title">${E(pick(openedLines))}</div><div class="noteBody">${E(n.body||'')}</div><div class="noteMeta">from ${E(n.author_name_snapshot)}</div><div class="noteActions"><button id="oyPin">PIN THIS BABY</button><button id="oyHoard">HOARD THIS</button><button id="oyReceived">TRANSMISSION RECEIVED</button></div></section>`;document.body.appendChild(w)
+  const photoUrl=await signedNoteMedia(n.photo_path),doodleUrl=await signedNoteMedia(n.doodle_path),noteText=contrastText(n.color)
+  const w=document.createElement('div');w.className='modalWrap';w.innerHTML=`<section class="panel modal" style="background:${n.color};color:${noteText}"><div class="section-title">${E(pick(openedLines))}</div><div class="noteBody">${E(n.body||'')}</div>${photoUrl?`<img class="noteMedia" src="${E(photoUrl)}" alt="Photo attached to note">`:''}${doodleUrl?`<img class="noteMedia" src="${E(doodleUrl)}" alt="Doodle attached to note">`:''}<div class="noteMeta">from ${E(n.author_name_snapshot)}</div><div class="noteActions open"><button id="oyPin">PIN THIS BABY</button><button id="oyHoard">HOARD THIS</button><button id="oyReceived">TRANSMISSION RECEIVED</button></div></section>`;document.body.appendChild(w)
   w.querySelector('#oyPin').onclick=async()=>{await supabase.from('notes').update({pinned:true,dismissed_at:null}).eq('id',id);w.remove();drawNotes();bridgeNotes()}
   w.querySelector('#oyHoard').onclick=async()=>{await supabase.from('notes').update({hoarded_at:new Date().toISOString(),pinned:false}).eq('id',id);w.remove();toast('Added to Making loveNOTES <3');drawNotes();bridgeNotes()}
   w.querySelector('#oyReceived').onclick=async()=>{await supabase.from('notes').update({dismissed_at:new Date().toISOString(),pinned:false}).eq('id',id);w.remove();drawNotes();bridgeNotes()}

@@ -57,3 +57,70 @@ button,input,select,textarea{font:inherit}button{cursor:pointer}.shell{max-width
 
 /* v0.7 Notes */
 .noteBoard{display:grid;grid-template-columns:repeat(auto-fill,minmax(245px,1fr));gap:12px}.sticky{padding:16px;border-radius:18px;border:1px solid #ffffff22;min-height:150px;box-shadow:0 10px 24px #0005}.noteBody{white-space:pre-wrap;line-height:1.42}.noteTop{display:flex;justify-content:space-between;gap:8px}.noteTo{font-size:.72rem;font-weight:950;text-transform:uppercase}.noteMeta{font-size:.72rem;opacity:.72;margin-top:10px}.noteActions,.reactionStrip,.noteFilters,.canvasTools,.palettePanels{display:flex;gap:7px;flex-wrap:wrap}.noteActions{margin-top:12px}.noteActions button,.reactionBtn,.noteFilters button{border:1px solid #ffffff30;background:#09090b88;color:#eee;border-radius:10px;padding:7px 9px}.sealedNote{cursor:pointer;display:grid;place-items:center;text-align:center;min-height:180px}.sealedMark{font-size:2.2rem}.sealedCopy{font-weight:950}.noteThread{border-top:1px solid #ffffff20;margin-top:12px;padding-top:10px}.comment,.historyVersion{padding:8px 0;border-bottom:1px solid #ffffff18}.commentName{font-weight:900}.loveNotesTitle{font-size:clamp(2rem,8vw,4.4rem);font-weight:950}.doodleCanvas{width:100%;height:360px;background:#111;border:1px solid var(--line);border-radius:14px;touch-action:none;display:block}.palettePanel{width:40px;height:40px;border:2px solid #ffffff30;border-radius:9px}.palettePanel.selected{outline:3px solid #fff}.noteExpiry{border:1px solid #7d1e36;background:#210a10;color:#ff9ab1;padding:9px;border-radius:10px;margin-top:9px;font-weight:850}.noteReminder{border:1px solid #69582e;color:#ffd986;padding:7px;border-radius:9px;margin-top:8px}.bridgeNotes{display:grid;gap:9px}.bridgeMiniNote{padding:11px 12px;border-radius:12px;border:1px solid #ffffff1c}.permaDanger{position:fixed;inset:0;z-index:1000;background:#8d001c;display:grid;place-items:center;padding:20px;color:#fff;animation:dangerPulse 1.2s infinite alternate}.permaDangerBox{width:min(620px,100%);text-align:center;background:#250008;border:3px solid #fff;border-radius:22px;padding:30px;box-shadow:0 0 80px #000}.permaDanger h1{font-size:clamp(2.8rem,12vw,6rem);margin:0}.permaDangerActions{display:flex;justify-content:center;gap:12px;flex-wrap:wrap}.permaDanger button{border:2px solid #fff;background:#160005;color:#fff;border-radius:12px;padding:13px 18px;font-weight:950}@keyframes dangerPulse{from{background:#760017}to{background:#b00024}}@media(max-width:700px){.noteBoard{grid-template-columns:1fr}.doodleCanvas{height:300px}}
+
+
+/* ===== v0.7.1 readability + long-press note options ===== */
+:root{
+  --text:#f5f2f3;
+  --muted:#c9c2c6;
+}
+body{color:var(--text)}
+.muted{color:var(--muted)}
+.sticky{
+  color:var(--note-text,#fff);
+  border:2px solid color-mix(in srgb,var(--note-color,#7d5266) 70%,white 10%);
+  background:var(--note-color,#7d5266);
+}
+.sticky .noteMeta,.sticky .noteTo{opacity:.9}
+.sticky .reactionBtn{
+  color:var(--note-text,#fff);
+  border-color:color-mix(in srgb,var(--note-text,#fff) 45%,transparent);
+  background:color-mix(in srgb,#000 42%,transparent);
+  font-weight:850;
+}
+.noteActions{
+  display:none;
+  margin-top:12px;
+  padding-top:10px;
+  border-top:1px solid color-mix(in srgb,var(--note-text,#fff) 35%,transparent);
+}
+.noteActions.open{display:flex}
+.noteActions button{
+  color:var(--note-text,#fff);
+  background:color-mix(in srgb,#000 55%,transparent);
+  border-color:color-mix(in srgb,var(--note-text,#fff) 45%,transparent);
+  font-weight:850;
+}
+.noteHoldHint{
+  margin-top:8px;
+  font-size:.72rem;
+  font-weight:800;
+  opacity:.82;
+}
+.noteMedia{
+  width:100%;
+  max-height:320px;
+  object-fit:contain;
+  border-radius:12px;
+  margin-top:10px;
+  background:#09090b;
+  border:1px solid #ffffff35;
+}
+.bridgeMiniNote{
+  color:#fff;
+  background:#111216 !important;
+  border:1px solid #5c5057;
+}
+.bridgeMiniNote b{color:#fff}
+input,select,textarea,button{
+  font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+}
+input,select,textarea{
+  color:#fff;
+  background:#090a0c;
+  border-color:#625a60;
+}
+button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible,.sticky:focus-visible{
+  outline:3px solid #fff;
+  outline-offset:3px;
+}
