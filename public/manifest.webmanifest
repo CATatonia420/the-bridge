@@ -1,1 +1,23 @@
-{"name":"The Bridge","short_name":"Bridge","start_url":"/the-bridge/","scope":"/the-bridge/","display":"standalone","background_color":"#08090b","theme_color":"#08090b"}
+{
+  "name": "The Bridge",
+  "short_name": "Bridge",
+  "start_url": "/the-bridge/",
+  "scope": "/the-bridge/",
+  "display": "standalone",
+  "background_color": "#07080a",
+  "theme_color": "#0a0b0e",
+  "icons": [
+    {
+      "src": "/the-bridge/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/the-bridge/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

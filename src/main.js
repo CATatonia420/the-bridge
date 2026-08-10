@@ -5,19 +5,60 @@ const app=document.querySelector('#app')
 let session=null,household=null,profile=null,active='bridge',agendaView='today',channel=null
 const E=s=>String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))
 const q=s=>document.querySelector(s),qa=s=>[...document.querySelectorAll(s)]
-const nav=()=>`<nav class="nav">
+
+function parseRoute(){
+  const raw=(location.hash||'#/bridge').replace(/^#\/?/,'')
+  const parts=raw.split('/').filter(Boolean)
+  active=parts[0]||'bridge'
+  if(active==='notes'&&parts[1])notesTab=parts[1]
+  if(active==='treasury'&&parts[1])treasuryTab=parts[1]
+  if(active==='agenda'&&parts[1])agendaView=parts[1]
+  const valid=['bridge','agenda','notes','more','shopping','treasury','trophy','log','crew']
+  if(!valid.includes(active))active='bridge'
+}
+function routeHash(route=active){
+  if(route==='notes')return `#/notes/${notesTab||'active'}`
+  if(route==='treasury')return `#/treasury/${treasuryTab||'bills'}`
+  if(route==='agenda')return `#/agenda/${agendaView||'today'}`
+  return `#/${route}`
+}
+function go(route,{replace=false}={}){
+  active=route
+  const h=routeHash(route)
+  if(replace)history.replaceState({bridge:true,route},'',h)
+  else if(location.hash!==h)history.pushState({bridge:true,route},'',h)
+  render()
+}
+function syncRoute({replace=false}={}){
+  const h=routeHash(active)
+  if(replace)history.replaceState({bridge:true,route:active},'',h)
+  else history.pushState({bridge:true,route:active},'',h)
+}
+function applyTheme(){
+  const theme=(profile?.ui_theme==='J'?'J':'C')
+  document.documentElement.dataset.bridgeTheme=theme
+  localStorage.setItem('bridge_theme',theme)
+}
+async function setTheme(theme){
+  theme=theme==='J'?'J':'C'
+  const r=await supabase.from('profiles').update({ui_theme:theme}).eq('user_id',session.user.id)
+  if(r.error)return toast('Theme transporter malfunction.')
+  profile={...profile,ui_theme:theme};applyTheme();toast(`Theme ${theme} engaged.`);if(active==='more')more()
+}
+
+const nav=()=>`<nav class="nav hubNav">
   ${[
     ['bridge','⌂','Bridge'],
     ['agenda','◷','Agenda'],
     ['notes','✦','Comms'],
-    ['more','⋯','More']
-  ].map(([x,icon,label])=>`<button data-tab="${x}" class="${(active===x||(['shopping','treasury','trophy'].includes(active)&&x==='more'))?'active':''}" aria-label="${label}">
+    ['more','•••','More']
+  ].map(([x,icon,label])=>`<button data-tab="${x}" class="${(active===x||(['shopping','treasury','trophy','log'].includes(active)&&x==='more'))?'active':''}" aria-label="${label}">
     <span class="navIcon">${icon}</span><span class="navLabel">${label}</span>
   </button>`).join('')}
 </nav>`
 const top=t=>`<header class="top"><div><div class="brand">${E(t||'The Bridge')}</div><div class="muted">${E(household?.name||'')}</div></div><button id="logout" class="ghost">Log out</button></header>`
-function wire(){q('#logout')?.addEventListener('click',()=>supabase.auth.signOut());qa('[data-tab]').forEach(b=>b.onclick=()=>{active=b.dataset.tab;render()})}
-async function userData(){const u=session.user.id;profile=(await supabase.from('profiles').select('*').eq('user_id',u).maybeSingle()).data;const m=(await supabase.from('household_members').select('household_id').eq('user_id',u).limit(1).maybeSingle()).data;household=m?(await supabase.from('households').select('*').eq('id',m.household_id).single()).data:null}
+function wire(){q('#logout')?.addEventListener('click',()=>supabase.auth.signOut());qa('[data-tab]').forEach(b=>b.onclick=()=>go(b.dataset.tab))}
+async function userData(){const u=session.user.id;profile=(await supabase.from('profiles').select('*').eq('user_id',u).maybeSingle()).data;applyTheme();const m=(await supabase.from('household_members').select('household_id').eq('user_id',u).limit(1).maybeSingle()).data;household=m?(await supabase.from('households').select('*').eq('id',m.household_id).single()).data:null}
 
 function auth(){
  app.innerHTML=`<main class="shell"><section class="panel auth"><div class="brand">The Bridge</div><h1>Permission to come aboard?</h1><div class="tabs"><button id="li" class="active">Log in</button><button id="su">Sign up</button></div><form id="af"><div class="field"><label>Email</label><input id="em" type="email" required></div><div class="field"><label>Password</label><input id="pw" type="password" minlength="6" required></div><button class="primary">ENTER THE BRIDGE</button><p id="err" class="error"></p></form></section></main>`
@@ -39,17 +80,47 @@ const timeText=x=>x?new Date(x).toLocaleTimeString('en-IE',{hour:'2-digit',minut
 function overdue(t){if(!t.due_at||t.status==='done')return'';const h=(Date.now()-new Date(t.due_at))/36e5;if(h<=0)return'';if(h<6)return'<div class="over1">Temporal hiccup detected.</div>';if(h<24)return'<div class="over2">This has become mildly embarrassing.</div>';if(h<72)return'<div class="over3">TEMPORAL ANOMALY DETECTED.</div>';return'<div class="over4">WE HAVE ABANDONED THE TIMELINE.</div>'}
 
 async function bridge(){
- app.innerHTML=`<main class="shell">${top()}<div id="hunger"></div><div class="grid">
- <section class="panel hero"><span class="muted">CURRENTLY ABOARD:</span><h1>${E(profile?.display_name)}</h1><div>Why don't starships ever get lost?<br><span class="muted">They always follow their enterprise.</span></div></section>
- <section class="panel card cats"><div class="section-title">The children</div><div id="cats" class="catrow">Scanning…</div></section>
- <section class="panel card ops"><div class="section-title">Comms</div><div id="bridgeNotes" class="bridgeNotes"><span class="muted">Checking the post-its…</span></div></section>
- <section class="panel card agenda"><div class="section-title">Today</div><div id="todayTasks" class="muted">Consulting the timeline…</div></section>
- <section class="panel card ops"><div class="section-title">Upcoming tribute</div><div id="bridgeBills" class="muted">Sweeping financial radar…</div></section>
- <section class="panel card ops bridgeDrugs" id="bridgeDrugs" tabindex="0"><div class="section-title">Take Your Drugs</div><div class="drugBridgeRow"><b id="drugBridgeText">Suspiciously simple by design.</b><span class="muted">Long press to edit</span></div></section>
- </div></main><button id="plus" class="plus">+</button><section id="menu" class="panel menu" hidden><button id="quickNote">NOTE</button><button id="quickTask">TASK</button><button>PLAN</button><button id="quickStuff">STUFF</button><button id="quickMoney">MONEY</button></section>${nav()}`
- wire();q('#plus').onclick=()=>q('#menu').hidden=!q('#menu').hidden;q('#quickTask').onclick=()=>taskModal();q('#quickStuff').onclick=()=>stuffModal();q('#quickMoney').onclick=()=>{active='treasury';render()};q('#quickNote').onclick=()=>noteTypeChooser();
- await Promise.all([loadCats(),bridgeTasks(),bridgeBills(),bridgeNotes()])
+ app.innerHTML=`<main class="shell hubShell">${top()}
+ <section class="hubStatus panel">
+   <div class="hubStatusTop"><div><span class="systemTag">HOUSEHOLD CONTROL HUB</span><h1>${E(profile?.nickname||profile?.display_name||'Crew')}</h1></div><div class="shipOnline"><span class="statusLamp"></span>ONLINE</div></div>
+   <div id="miniWidget" class="miniWidget"><span>Scanning ship systems…</span></div>
+ </section>
+ <div id="hunger"></div>
+ <section class="hubLayout">
+   <section class="hubPanel catConsole"><div class="hubPanelHead"><span>01</span><b>THE CHILDREN</b><small>FELINE LIFE SUPPORT</small></div><div id="cats" class="catrow compactCats">Scanning…</div></section>
+   <section class="hubPanel todayConsole"><div class="hubPanelHead"><span>02</span><b>TODAY</b><small>ACTIVE TIMELINE</small></div><div id="todayTasks" class="timelineConsole muted">Consulting the timeline…</div></section>
+   <section class="hubPanel commsConsole"><div class="hubPanelHead clickableHead" id="openCommsHub"><span>03</span><b>COMMS</b><small>NOTICE DECK</small></div><div id="bridgeNotes" class="bridgeNotes"><span class="muted">Checking the post-its…</span></div></section>
+   <section class="hubPanel systemsConsole"><div class="hubPanelHead"><span>04</span><b>SYSTEMS</b><small>LOW-LEVEL NOISE</small></div>
+      <div class="systemTiles">
+        <button class="systemTile" id="bridgeDrugs" type="button"><span class="tileLamp"></span><b>DRUGS</b><small id="drugBridgeText">Suspiciously simple.</small></button>
+        <button class="systemTile" id="openTreasuryHub" type="button"><span class="tileLamp"></span><b>TREASURY</b><small id="bridgeBills">Sweeping radar…</small></button>
+        <button class="systemTile" id="openCargoHub" type="button"><span class="tileLamp"></span><b>CARGO</b><small>Shopping manifest</small></button>
+      </div>
+   </section>
+ </section>
+ </main><button id="plus" class="plus hubPlus">+</button><section id="menu" class="panel menu" hidden><button id="quickNote">NOTE</button><button id="quickTask">TASK</button><button>PLAN</button><button id="quickStuff">STUFF</button><button id="quickMoney">MONEY</button></section>${nav()}`
+ wire()
+ q('#plus').onclick=()=>q('#menu').hidden=!q('#menu').hidden
+ q('#quickTask').onclick=()=>taskModal();q('#quickStuff').onclick=()=>stuffModal();q('#quickMoney').onclick=()=>go('treasury');q('#quickNote').onclick=()=>noteTypeChooser()
+ q('#openCommsHub').onclick=()=>go('notes');q('#openTreasuryHub').onclick=()=>go('treasury');q('#openCargoHub').onclick=()=>go('shopping')
+ await Promise.all([loadCats(),bridgeTasks(),bridgeBills(),bridgeNotes(),loadHubWidget()])
  wireBridgeDrugs()
+}
+async function loadHubWidget(){
+  const box=q('#miniWidget');if(!box)return
+  try{
+    const today=dateKey(new Date())
+    const [tr,nr,br]=await Promise.all([
+      supabase.from('tasks').select('id,due_at,status').eq('household_id',household.id).eq('status','needs_doing'),
+      supabase.from('notes').select('id,recipient_user_id,author_user_id,opened_at,note_type,deleted_at').eq('household_id',household.id).is('deleted_at',null),
+      supabase.from('bills').select('id,due_at,active').eq('household_id',household.id).eq('active',true)
+    ])
+    const quests=(tr.data||[]).filter(t=>t.due_at&&dateKey(t.due_at)===today).length
+    const transmissions=(nr.data||[]).filter(n=>n.note_type==='for_you'&&n.recipient_user_id===session.user.id&&!n.opened_at).length
+    const due=(br.data||[]).filter(b=>daysFromNow(b.due_at)<=1).length
+    const lines=['Ship mostly operational.','All systems nominal-ish.','No hull breaches reported.','Household remains questionably functional.']
+    box.innerHTML=`<div class="widgetStat"><b>${quests}</b><span>quests today</span></div><div class="widgetStat"><b>${transmissions}</b><span>new transmissions</span></div><div class="widgetStat"><b>${due}</b><span>bills close</span></div><div class="widgetMessage">✦ ${E(pick(lines))}</div>`
+  }catch(e){box.innerHTML='<span class="muted">Widget is pretending not to know anything.</span>'}
 }
 async function bridgeTasks(){const box=q('#todayTasks');if(!box)return;const today=dateKey(new Date()),{data}=await supabase.from('tasks').select('*').eq('household_id',household.id).eq('status','needs_doing').order('due_at');const list=(data||[]).filter(t=>t.due_at&&dateKey(t.due_at)===today);box.innerHTML=list.length?list.slice(0,5).map(t=>`<div class="row"><span>${E(t.title)}</span><span>${t.all_day?'TODAY':timeText(t.due_at)}</span></div>`).join(''):'No disasters currently detected. Probably.'}
 async function loadCats(){const box=q('#cats'),hb=q('#hunger');if(!box)return;try{const cr=await supabase.from('cats').select('*,cat_feeding_schedules(*)').eq('household_id',household.id).order('name');if(cr.error)throw cr.error;const fr=await supabase.from('cat_feedings').select('*').eq('household_id',household.id).eq('feeding_date',dateKey(new Date())).order('recorded_at',{ascending:false});if(fr.error)throw fr.error;const fs=fr.data||[],users=[...new Set(fs.map(x=>x.recorded_by))],names={};if(users.length){for(const p of (await supabase.from('profiles').select('user_id,display_name').in('user_id',users)).data||[])names[p.user_id]=p.display_name}const now=new Date(),mins=now.getHours()*60+now.getMinutes();let lateAny=false;box.innerHTML=(cr.data||[]).map(c=>`<article class="cat"><div class="catname">${E(c.name)}</div><div class="muted">${E(c.breed)}</div><div class="bowls">${(c.cat_feeding_schedules||[]).sort((a,b)=>a.feeding_time.localeCompare(b.feeding_time)).map(s=>{const f=fs.find(x=>x.cat_id===c.id&&x.schedule_id===s.id),[h,m]=s.feeding_time.split(':').map(Number),late=!f&&mins>h*60+m+60;if(late)lateAny=true;return`<button class="bowl ${f?f.status:late?'overdue':''}" data-cat="${c.id}" data-sch="${s.id}" data-time="${s.feeding_time.slice(0,5)}">${s.feeding_time.slice(0,5)}<br>${f?f.status.toUpperCase():late?'HUNGRY':'○'}${f?`<div class="stamp">${E(names[f.recorded_by]||'Crew')} · ${timeText(f.recorded_at)}</div>`:''}</button>`}).join('')}</div></article>`).join('');hb.innerHTML=lateAny?'<div class="alert">THE CHILDREN HUNGER. THIS IS NOT A DRILL.</div>':'';qa('.bowl').forEach(b=>b.onclick=()=>feedModal(b.dataset.cat,b.dataset.sch,b.dataset.time))}catch(e){box.innerHTML=`<div class="error">FELINE SCANNER MALFUNCTION: ${E(e.message)}</div>`}}
@@ -60,7 +131,7 @@ async function crew(){app.innerHTML=`<main class="shell">${top('Crew')}<section 
 async function agenda(){
  await ensureCategories()
  app.innerHTML=`<main class="shell">${top('Agenda')}<div class="agendaToolbar"><div><h1 class="pageTitle">Temporal Operations</h1><div class="muted">Try not to damage the timeline.</div></div><div><button id="newTask" class="primary">NEW TASK</button> <button id="categories" class="ghost">CATEGORIES</button></div></div><div class="viewSwitch"><button data-view="today" class="${agendaView==='today'?'active':''}">TODAY</button><button data-view="week" class="${agendaView==='week'?'active':''}">THIS WEEK</button><button data-view="month" class="${agendaView==='month'?'active':''}">MONTH</button></div><section id="agendaBills" class="panel card" style="margin-bottom:12px"><div class="muted">Financial radar sweeping…</div></section><section id="stage" class="panel card">Consulting the timeline…</section></main>${nav()}`
- wire();q('#newTask').onclick=()=>taskModal();q('#categories').onclick=()=>categoryModal();qa('[data-view]').forEach(b=>b.onclick=()=>{agendaView=b.dataset.view;agenda()});addSwipe(q('#stage'));await Promise.all([drawAgenda(),drawAgendaBills()])
+ wire();q('#newTask').onclick=()=>taskModal();q('#categories').onclick=()=>categoryModal();qa('[data-view]').forEach(b=>b.onclick=()=>{agendaView=b.dataset.view;syncRoute();agenda()});addSwipe(q('#stage'));await Promise.all([drawAgenda(),drawAgendaBills()])
 }
 function addSwipe(el){let x=null;el.addEventListener('touchstart',e=>x=e.touches[0].clientX,{passive:true});el.addEventListener('touchend',e=>{if(x===null)return;const dx=e.changedTouches[0].clientX-x;x=null;if(Math.abs(dx)<60)return;const v=['today','week','month'];let i=v.indexOf(agendaView)+(dx<0?1:-1);i=Math.max(0,Math.min(2,i));if(v[i]!==agendaView){agendaView=v[i];agenda()}},{passive:true})}
 async function agendaData(){const [tr,cr,mr]=await Promise.all([supabase.from('tasks').select('*,task_subtasks(*)').eq('household_id',household.id).order('due_at',{ascending:true,nullsFirst:false}),supabase.from('task_categories').select('*').eq('household_id',household.id).order('sort_order'),supabase.from('household_members').select('user_id').eq('household_id',household.id)]);if(tr.error)throw tr.error;const ids=(mr.data||[]).map(x=>x.user_id),ps=ids.length?(await supabase.from('profiles').select('user_id,display_name').in('user_id',ids)).data||[]:[];return{tasks:tr.data||[],cats:cr.data||[],profiles:ps}}
@@ -82,12 +153,17 @@ async function ensureShoppingLists(){
   await supabase.from('shopping_lists').insert(defaultShoppingLists.map((a,i)=>({household_id:household.id,name:a[0],color:a[1],sort_order:i,created_by:session.user.id})))
 }
 async function more(){
-  app.innerHTML=`<main class="shell">${top('More')}<h1 class="pageTitle">Systems</h1><div class="moreGrid">
-    <section id="openShopping" class="panel moduleCard"><div class="section-title">Cargo</div><h2>Shopping</h2><p class="muted">Needs, wants, photos, lists, shops and live additions.</p></section>
-<section class="panel moduleCard"><div class="section-title">Cold Storage</div><h2>Freezer</h2><p class="muted">Coming next.</p></section>
-    <section id="openTreasury" class="panel moduleCard"><div class="section-title">Treasury</div><h2>Bills & Debt</h2><p class="muted">Upcoming tribute, disappearing debt, and a suspicious portal.</p></section>
+  app.innerHTML=`<main class="shell">${top('More')}<div class="moreHead"><span class="systemTag">SECONDARY SYSTEMS</span><h1 class="pageTitle">More</h1></div>
+  <section class="themeDeck panel card"><div><div class="section-title">Your console</div><div class="muted">Theme follows your profile across devices.</div></div>
+    <div class="themeChoices"><button id="themeC" class="themeChoice ${profile?.ui_theme!=='J'?'selected':''}" data-theme-choice="C"><span class="themeSwatch cSwatch"></span><b>C</b></button><button id="themeJ" class="themeChoice ${profile?.ui_theme==='J'?'selected':''}" data-theme-choice="J"><span class="themeSwatch jSwatch"></span><b>J</b></button></div>
+  </section>
+  <div class="moreGrid" style="margin-top:12px">
+    <section id="openShopping" class="panel moduleCard"><div class="moduleGlyph">▣</div><div class="section-title">Cargo</div><h2>Shopping</h2><p class="muted">The manifest.</p></section>
+    <section id="openTreasury" class="panel moduleCard"><div class="moduleGlyph">◈</div><div class="section-title">Treasury</div><h2>Bills & Debt</h2><p class="muted">Tribute and dwindling horrors.</p></section>
+    <section id="openLog" class="panel moduleCard"><div class="moduleGlyph">⌁</div><div class="section-title">Archives</div><h2>Captain's Log</h2><p class="muted">Permanent household lore.</p></section>
+    <section class="panel moduleCard"><div class="moduleGlyph">❄</div><div class="section-title">Cold Storage</div><h2>Freezer</h2><p class="muted">Coming next.</p></section>
   </div></main>${nav()}`
-  wire();q('#openShopping').onclick=()=>{active='shopping';render()};q('#openTreasury').onclick=()=>{active='treasury';render()}
+  wire();q('#openShopping').onclick=()=>go('shopping');q('#openTreasury').onclick=()=>go('treasury');q('#openLog').onclick=()=>go('log');qa('[data-theme-choice]').forEach(b=>b.onclick=()=>setTheme(b.dataset.themeChoice))
 }
 async function shopping(){
   await ensureShoppingLists()
@@ -234,13 +310,21 @@ async function enrichNoteMedia(notes){
 }
 function installLongPress(el,actions){
   let timer=null,moved=false
-  const open=()=>{actions.classList.add('open');el.setAttribute('aria-expanded','true')}
+  const close=()=>{actions.classList.remove('open','floatingMenu');actions.style.left='';actions.style.top='';document.removeEventListener('pointerdown',outside,true)}
+  const outside=e=>{if(!actions.contains(e.target)&&e.target!==el)close()}
+  const open=()=>{
+    const r=el.getBoundingClientRect()
+    actions.classList.add('open','floatingMenu')
+    const width=Math.min(300,window.innerWidth-24)
+    actions.style.width=`${width}px`
+    actions.style.left=`${Math.max(12,Math.min(window.innerWidth-width-12,r.left))}px`
+    actions.style.top=`${Math.max(12,Math.min(window.innerHeight-actions.offsetHeight-12,r.top+34))}px`
+    el.setAttribute('aria-expanded','true')
+    setTimeout(()=>document.addEventListener('pointerdown',outside,true),0)
+  }
   const start=()=>{moved=false;timer=setTimeout(()=>{if(!moved)open()},520)}
   const clear=()=>{if(timer){clearTimeout(timer);timer=null}}
-  el.addEventListener('pointerdown',start)
-  el.addEventListener('pointermove',()=>{moved=true;clear()})
-  el.addEventListener('pointerup',clear)
-  el.addEventListener('pointercancel',clear)
+  el.addEventListener('pointerdown',start);el.addEventListener('pointermove',()=>{moved=true;clear()});el.addEventListener('pointerup',clear);el.addEventListener('pointercancel',clear)
   el.addEventListener('contextmenu',e=>{e.preventDefault();open()})
   el.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();open()}})
 }
@@ -297,7 +381,7 @@ async function bridgeNotes(){
   const reactions=await reactionSummary(mine.map(n=>n.id))
   box.innerHTML=mine.length?`<div class="bridgeStickyGrid">${mine.slice(0,5).map(n=>bridgeNoteCard(n,reactions)).join('')}</div>${mine.length>5?`<button id="moreBridgeNotes" class="ghost notesMore">+${mine.length-5} MORE NOTES</button>`:''}`:'<span class="muted">Empy :(</span>'
   wireBridgeNotes(mine)
-  if(q('#moreBridgeNotes'))q('#moreBridgeNotes').onclick=()=>{active='notes';render()}
+  if(q('#moreBridgeNotes'))q('#moreBridgeNotes').onclick=()=>{go('notes')}
  }catch(e){console.error(e);box.textContent='Comms are making a suspicious noise.'}
 }
 function bridgeNoteCard(n,reactions={}){
@@ -334,7 +418,9 @@ function bridgeMenuHTML(n){
 function openBridgeMenu(card,n){
  qa('.bridgeNoteMenu.open').forEach(x=>x.classList.remove('open'))
  const m=card.querySelector('[data-bmenu]');if(!m)return
- m.innerHTML=bridgeMenuHTML(n);m.classList.add('open')
+ m.innerHTML=bridgeMenuHTML(n);m.classList.add('open','floatingMenu')
+ const r=card.getBoundingClientRect(),width=Math.min(300,window.innerWidth-24)
+ m.style.width=`${width}px`;m.style.left=`${Math.max(12,Math.min(window.innerWidth-width-12,r.left))}px`;m.style.top=`${Math.max(12,Math.min(window.innerHeight-330,r.top+32))}px`
  m.onclick=async e=>{const a=e.target.dataset.act;if(!a)return;e.stopPropagation()
   if(a==='edit')return noteModal(null,n.id)
   if(a==='pin'){await supabase.from('notes').update({pinned:!n.pinned,updated_at:new Date().toISOString()}).eq('id',n.id);return bridgeNotes()}
@@ -368,12 +454,16 @@ function wireBridgeDrugs(){
  card.oncontextmenu=e=>{e.preventDefault();edit()}
  card.onclick=()=>toast(localStorage.getItem('bridge_drugs_text')||'Suspiciously simple by design.')
 }
-let notesTab=localStorage.getItem('bridge_notes_tab')||'active'
+let notesTab=localStorage.getItem('bridge_notes_tab')||'all'
 async function notes(){
-  app.innerHTML=`<main class="shell">${top('Notes')}<div class="agendaToolbar"><div><h1 class="pageTitle">Notes & Doodles</h1><div class="muted">Household communications of varying strategic importance.</div></div><div><button id="newSticky" class="primary">GENERAL NOTE</button> <button id="newForYou" class="ghost">FOR YOU</button> <button id="newDoodle" class="ghost">DOODLE</button></div></div>
-  <div class="noteFilters"><button data-nt="active" class="${notesTab==='active'?'active':''}">NOTES</button><button data-nt="love" class="${notesTab==='love'?'active':''}">Making loveNOTES</button><button data-nt="bin" class="${notesTab==='bin'?'active':''}">BIN</button></div><section id="notesStage"><div class="panel card muted">Unfolding tiny pieces of paper…</div></section></main>${nav()}`
-  wire();q('#newSticky').onclick=()=>noteModal('sticky');q('#newForYou').onclick=()=>noteModal('for_you');q('#newDoodle').onclick=()=>doodleModal()
-  qa('[data-nt]').forEach(b=>b.onclick=()=>{notesTab=b.dataset.nt;localStorage.setItem('bridge_notes_tab',notesTab);notes()})
+  app.innerHTML=`<main class="shell commsShell">${top('Comms')}
+  <section class="commsHeader"><div><span class="systemTag">COMMUNICATIONS DECK</span><h1 class="pageTitle">Comms</h1><div class="muted">Post-its, sealed nonsense and evidence.</div></div><button id="newTransmission" class="primary transmissionButton">+ TRANSMISSION</button></section>
+  <div class="noteFilters commsFilters">
+    ${[['all','ALL'],['for_you','FOR YOU'],['notes','NOTES'],['doodles','DOODLES'],['love','Making loveNOTES'],['bin','BIN']].map(([k,l])=>`<button data-nt="${k}" class="${notesTab===k?'active':''}">${l}</button>`).join('')}
+  </div>
+  <section id="notesStage"><div class="panel card muted">Opening communications channels…</div></section></main>${nav()}`
+  wire();q('#newTransmission').onclick=()=>noteTypeChooser()
+  qa('[data-nt]').forEach(b=>b.onclick=()=>{notesTab=b.dataset.nt;localStorage.setItem('bridge_notes_tab',notesTab);syncRoute();drawNotes();qa('[data-nt]').forEach(x=>x.classList.toggle('active',x.dataset.nt===notesTab))})
   await drawNotes()
 }
 async function drawNotes(){
@@ -382,10 +472,13 @@ async function drawNotes(){
     const {data,error}=await supabase.from('notes').select('*').eq('household_id',household.id).order('created_at',{ascending:false});if(error)throw error
     let ns=await enrichNoteMedia(data||[])
     const reactions=await reactionSummary(ns.map(n=>n.id))
-    if(notesTab==='active')ns=ns.filter(n=>!n.deleted_at&&!n.hoarded_at)
+    if(notesTab==='all')ns=ns.filter(n=>!n.deleted_at&&!n.hoarded_at)
+    if(notesTab==='for_you')ns=ns.filter(n=>!n.deleted_at&&!n.hoarded_at&&n.note_type==='for_you')
+    if(notesTab==='notes')ns=ns.filter(n=>!n.deleted_at&&!n.hoarded_at&&n.note_type==='sticky')
+    if(notesTab==='doodles')ns=ns.filter(n=>!n.deleted_at&&!n.hoarded_at&&n.note_type==='doodle')
     if(notesTab==='love')ns=ns.filter(n=>!n.deleted_at&&n.hoarded_at)
     if(notesTab==='bin')ns=ns.filter(n=>n.deleted_at)
-    const title=notesTab==='love'?'<div class="loveNotesTitle">Making <span class="loveNOTES">loveNOTES</span></div>':notesTab==='bin'?'<div class="section-title">7-day bin</div>':'<div class="section-title">Current transmissions</div>'
+    const title=notesTab==='love'?'<div class="loveNotesTitle">Making <span class="loveNOTES">loveNOTES</span></div>':notesTab==='bin'?'<div class="section-title">7-day bin</div>':'<div class="section-title">Transmission board</div>'
     stage.innerHTML=`<section class="panel card">${title}<div class="noteBoard" style="margin-top:14px">${ns.length?ns.map(n=>noteCard(n,reactions)).join(''):`<div class="empty">${notesTab==='love'?'Time to hoard some LOVE':notesTab==='bin'?'The bin is blessedly empty.':'Empy :('}</div>`}</div></section>`
     wireNoteCards(ns)
   }catch(e){noteError(e)}
@@ -732,7 +825,7 @@ async function treasury(){
   <div class="treasuryTabs"><button data-moneytab="bills" class="${treasuryTab==='bills'?'active':''}">BILLS</button><button data-moneytab="debt" class="${treasuryTab==='debt'?'active':''}">DEBT</button><button data-moneytab="history" class="${treasuryTab==='history'?'active':''}">HISTORY</button></div>
   <section id="treasuryStage"><div class="panel card muted">Counting beans…</div></section></main>${nav()}`
   wire();q('#addBill').onclick=()=>billModal();q('#addDebt').onclick=()=>debtModal()
-  qa('[data-moneytab]').forEach(b=>b.onclick=()=>{treasuryTab=b.dataset.moneytab;localStorage.setItem('bridge_treasury_tab',treasuryTab);treasury()})
+  qa('[data-moneytab]').forEach(b=>b.onclick=()=>{treasuryTab=b.dataset.moneytab;localStorage.setItem('bridge_treasury_tab',treasuryTab);syncRoute();treasury()})
   await drawTreasury()
 }
 async function drawTreasury(){
@@ -817,7 +910,7 @@ async function drawDebts(){
     qa('[data-correct]').forEach(b=>b.onclick=()=>correctionModal(b.dataset.correct))
     qa('[data-editdebt]').forEach(b=>b.onclick=()=>debtModal(b.dataset.editdebt))
     qa('[data-deldebt]').forEach(b=>b.onclick=()=>deleteDebt(b.dataset.deldebt))
-    q('#trophyPortal').onclick=()=>{active='trophy';render()}
+    q('#trophyPortal').onclick=()=>{go('trophy')}
   }catch(e){moneyError(e)}
 }
 function hpBar(current,original){
@@ -903,8 +996,9 @@ async function captainsLog(){
 
 function placeholder(t){app.innerHTML=`<main class="shell">${top(t)}<section class="panel card"><h1 class="pageTitle">${E(t)}</h1><p class="muted">Coming soon.</p></section></main>${nav()}`;wire()}
 function render(){
-localStorage.setItem('bridge_active',active);
-document.body.classList.remove('shoppingMode');if(active==='bridge')bridge();else if(active==='crew')crew();else if(active==='agenda')agenda();else if(active==='more')more();else if(active==='shopping')shopping();else if(active==='treasury')treasury();else if(active==='trophy')trophyRoom();else if(active==='notes')notes();else if(active==='log')captainsLog();else placeholder(active[0].toUpperCase()+active.slice(1))}
+document.body.classList.remove('shoppingMode')
+if(active==='bridge')bridge();else if(active==='crew')crew();else if(active==='agenda')agenda();else if(active==='more')more();else if(active==='shopping')shopping();else if(active==='treasury')treasury();else if(active==='trophy')trophyRoom();else if(active==='notes')notes();else if(active==='log')captainsLog();else{active='bridge';bridge()}
+}
 function subscribe(){if(channel)supabase.removeChannel(channel);channel=supabase.channel('bridge-'+household.id).on('postgres_changes',{event:'*',schema:'public',table:'cat_feedings',filter:`household_id=eq.${household.id}`},()=>{if(active==='bridge')loadCats()}).on('postgres_changes',{event:'*',schema:'public',table:'tasks',filter:`household_id=eq.${household.id}`},()=>{if(active==='agenda')drawAgenda();if(active==='bridge')bridgeTasks()}).on('postgres_changes',{event:'*',schema:'public',table:'task_categories',filter:`household_id=eq.${household.id}`},()=>{if(active==='agenda')drawAgenda()})
 .on('postgres_changes',{event:'*',schema:'public',table:'shopping_items',filter:`household_id=eq.${household.id}`},payload=>{
   if(active==='shopping'){
@@ -924,5 +1018,24 @@ function subscribe(){if(channel)supabase.removeChannel(channel);channel=supabase
 .on('postgres_changes',{event:'*',schema:'public',table:'note_reactions',filter:`household_id=eq.${household.id}`},()=>{})
 .on('postgres_changes',{event:'*',schema:'public',table:'captains_log',filter:`household_id=eq.${household.id}`},()=>{if(active==='log')captainsLog()})
 .subscribe()}
-async function boot(){if(!configured)return auth();session=(await supabase.auth.getSession()).data.session;if(session){await userData();if(household){await ensureCategories();await ensureShoppingLists();subscribe();render()}else onboard()}else auth();supabase.auth.onAuthStateChange(async(_,s)=>{session=s;if(!s){profile=household=null;return auth()}await userData();if(household){await ensureCategories();await ensureShoppingLists();subscribe();render()}else onboard()})}
+async function boot(){
+  if(!configured)return auth()
+  session=(await supabase.auth.getSession()).data.session
+  if(session){
+    await userData()
+    if(household){
+      await ensureCategories();await ensureShoppingLists();subscribe()
+      parseRoute()
+      if(!location.hash)go('bridge',{replace:true});else render()
+    }else onboard()
+  }else auth()
+  supabase.auth.onAuthStateChange(async(_,s)=>{
+    session=s
+    if(!s){profile=household=null;return auth()}
+    await userData()
+    if(household){await ensureCategories();await ensureShoppingLists();subscribe();parseRoute();render()}else onboard()
+  })
+}
+window.addEventListener('popstate',()=>{if(!session||!household)return;parseRoute();render()})
+window.addEventListener('hashchange',()=>{if(!session||!household)return;parseRoute();render()})
 boot()
