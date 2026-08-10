@@ -1,7 +1,8 @@
 {
   "name": "The Bridge",
   "short_name": "Bridge",
-  "start_url": "/",
+  "start_url": "/the-bridge/",
+  "scope": "/the-bridge/",
   "display": "standalone",
   "background_color": "#08090b",
   "theme_color": "#08090b",
