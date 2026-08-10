@@ -5,7 +5,7 @@ const app=document.querySelector('#app')
 let session=null,household=null,profile=null,active='bridge',agendaView='today',channel=null
 const E=s=>String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))
 const q=s=>document.querySelector(s),qa=s=>[...document.querySelectorAll(s)]
-const nav=()=>`<nav class="nav">${['bridge','agenda','crew','log','more'].map(x=>`<button data-tab="${x}" class="${(active===x||(['shopping','treasury','trophy'].includes(active)&&x==='more'))?'active':''}">${x.toUpperCase()}</button>`).join('')}</nav>`
+const nav=()=>`<nav class="nav">${['bridge','agenda','crew','log','more'].map(x=>`<button data-tab="${x}" class="${(active===x||(['shopping','treasury','trophy','notes'].includes(active)&&x==='more'))?'active':''}">${x.toUpperCase()}</button>`).join('')}</nav>`
 const top=t=>`<header class="top"><div><div class="brand">${E(t||'The Bridge')}</div><div class="muted">${E(household?.name||'')}</div></div><button id="logout" class="ghost">Log out</button></header>`
 function wire(){q('#logout')?.addEventListener('click',()=>supabase.auth.signOut());qa('[data-tab]').forEach(b=>b.onclick=()=>{active=b.dataset.tab;render()})}
 async function userData(){const u=session.user.id;profile=(await supabase.from('profiles').select('*').eq('user_id',u).maybeSingle()).data;const m=(await supabase.from('household_members').select('household_id').eq('user_id',u).limit(1).maybeSingle()).data;household=m?(await supabase.from('households').select('*').eq('id',m.household_id).single()).data:null}
@@ -30,8 +30,8 @@ const timeText=x=>x?new Date(x).toLocaleTimeString('en-IE',{hour:'2-digit',minut
 function overdue(t){if(!t.due_at||t.status==='done')return'';const h=(Date.now()-new Date(t.due_at))/36e5;if(h<=0)return'';if(h<6)return'<div class="over1">Temporal hiccup detected.</div>';if(h<24)return'<div class="over2">This has become mildly embarrassing.</div>';if(h<72)return'<div class="over3">TEMPORAL ANOMALY DETECTED.</div>';return'<div class="over4">WE HAVE ABANDONED THE TIMELINE.</div>'}
 
 async function bridge(){
- app.innerHTML=`<main class="shell">${top()}<div id="hunger"></div><div class="grid"><section class="panel hero"><span class="muted">CURRENTLY ABOARD:</span><h1>${E(profile?.display_name)}</h1><div>Why don't starships ever get lost?<br><span class="muted">They always follow their enterprise.</span></div></section><section class="panel card cats"><div class="section-title">The children</div><div id="cats" class="catrow">Scanning…</div></section><section class="panel card notes"><div class="section-title">Sticky notes</div><div class="sticky">There is cake in the fridge.<br><br>This is not a drill.</div></section><section class="panel card agenda"><div class="section-title">Today</div><div id="todayTasks" class="muted">Consulting the timeline…</div></section><section class="panel card ops"><div class="section-title">Upcoming tribute</div><div id="bridgeBills" class="muted">Sweeping financial radar…</div></section></div></main><button id="plus" class="plus">+</button><section id="menu" class="panel menu" hidden><button>NOTE</button><button id="quickTask">TASK</button><button>PLAN</button><button id="quickStuff">STUFF</button><button id="quickMoney">MONEY</button></section>${nav()}`
- wire();q('#plus').onclick=()=>q('#menu').hidden=!q('#menu').hidden;q('#quickTask').onclick=()=>taskModal();q('#quickStuff').onclick=()=>shoppingItemModal();q('#quickMoney').onclick=()=>{active='treasury';render()};await Promise.all([loadCats(),bridgeTasks(),bridgeBills()])
+ app.innerHTML=`<main class="shell">${top()}<div id="hunger"></div><div class="grid"><section class="panel hero"><span class="muted">CURRENTLY ABOARD:</span><h1>${E(profile?.display_name)}</h1><div>Why don't starships ever get lost?<br><span class="muted">They always follow their enterprise.</span></div></section><section class="panel card cats"><div class="section-title">The children</div><div id="cats" class="catrow">Scanning…</div></section><section class="panel card notes"><div class="section-title">Sticky notes</div><div class="sticky">There is cake in the fridge.<br><br>This is not a drill.</div></section><section class="panel card agenda"><div class="section-title">Today</div><div id="todayTasks" class="muted">Consulting the timeline…</div></section><section class="panel card ops"><div class="section-title">Upcoming tribute</div><div id="bridgeBills" class="muted">Sweeping financial radar…</div></section><section class="panel card ops"><div class="section-title">Notes on the console</div><div id="bridgeNotes" class="bridgeNotes"><span class="muted">Checking the post-its…</span></div></section></div></main><button id="plus" class="plus">+</button><section id="menu" class="panel menu" hidden><button id="quickNote">NOTE</button><button id="quickTask">TASK</button><button>PLAN</button><button id="quickStuff">STUFF</button><button id="quickMoney">MONEY</button></section>${nav()}`
+ wire();q('#plus').onclick=()=>q('#menu').hidden=!q('#menu').hidden;q('#quickTask').onclick=()=>taskModal();q('#quickStuff').onclick=()=>shoppingItemModal();q('#quickMoney').onclick=()=>{active='treasury';render()};q('#quickNote').onclick=()=>noteModal();await Promise.all([loadCats(),bridgeTasks(),bridgeBills(),bridgeNotes()])
 }
 async function bridgeTasks(){const box=q('#todayTasks');if(!box)return;const today=dateKey(new Date()),{data}=await supabase.from('tasks').select('*').eq('household_id',household.id).eq('status','needs_doing').order('due_at');const list=(data||[]).filter(t=>t.due_at&&dateKey(t.due_at)===today);box.innerHTML=list.length?list.slice(0,5).map(t=>`<div class="row"><span>${E(t.title)}</span><span>${t.all_day?'TODAY':timeText(t.due_at)}</span></div>`).join(''):'No disasters currently detected. Probably.'}
 async function loadCats(){const box=q('#cats'),hb=q('#hunger');if(!box)return;try{const cr=await supabase.from('cats').select('*,cat_feeding_schedules(*)').eq('household_id',household.id).order('name');if(cr.error)throw cr.error;const fr=await supabase.from('cat_feedings').select('*').eq('household_id',household.id).eq('feeding_date',dateKey(new Date())).order('recorded_at',{ascending:false});if(fr.error)throw fr.error;const fs=fr.data||[],users=[...new Set(fs.map(x=>x.recorded_by))],names={};if(users.length){for(const p of (await supabase.from('profiles').select('user_id,display_name').in('user_id',users)).data||[])names[p.user_id]=p.display_name}const now=new Date(),mins=now.getHours()*60+now.getMinutes();let lateAny=false;box.innerHTML=(cr.data||[]).map(c=>`<article class="cat"><div class="catname">${E(c.name)}</div><div class="muted">${E(c.breed)}</div><div class="bowls">${(c.cat_feeding_schedules||[]).sort((a,b)=>a.feeding_time.localeCompare(b.feeding_time)).map(s=>{const f=fs.find(x=>x.cat_id===c.id&&x.schedule_id===s.id),[h,m]=s.feeding_time.split(':').map(Number),late=!f&&mins>h*60+m+60;if(late)lateAny=true;return`<button class="bowl ${f?f.status:late?'overdue':''}" data-cat="${c.id}" data-sch="${s.id}" data-time="${s.feeding_time.slice(0,5)}">${s.feeding_time.slice(0,5)}<br>${f?f.status.toUpperCase():late?'HUNGRY':'○'}${f?`<div class="stamp">${E(names[f.recorded_by]||'Crew')} · ${timeText(f.recorded_at)}</div>`:''}</button>`}).join('')}</div></article>`).join('');hb.innerHTML=lateAny?'<div class="alert">THE CHILDREN HUNGER. THIS IS NOT A DRILL.</div>':'';qa('.bowl').forEach(b=>b.onclick=()=>feedModal(b.dataset.cat,b.dataset.sch,b.dataset.time))}catch(e){box.innerHTML=`<div class="error">FELINE SCANNER MALFUNCTION: ${E(e.message)}</div>`}}
@@ -66,11 +66,12 @@ async function ensureShoppingLists(){
 async function more(){
   app.innerHTML=`<main class="shell">${top('More')}<h1 class="pageTitle">Systems</h1><div class="moreGrid">
     <section id="openShopping" class="panel moduleCard"><div class="section-title">Cargo</div><h2>Shopping</h2><p class="muted">Needs, wants, photos, lists, shops and live additions.</p></section>
-    <section class="panel moduleCard"><div class="section-title">Cold Storage</div><h2>Freezer</h2><p class="muted">Coming next.</p></section>
+    <section id="openNotes" class="panel moduleCard"><div class="section-title">Comms</div><h2>Notes & Doodles</h2><p class="muted">Sticky notes, For You transmissions, doodles and Making loveNOTES.</p></section>
+<section class="panel moduleCard"><div class="section-title">Cold Storage</div><h2>Freezer</h2><p class="muted">Coming next.</p></section>
     <section id="openTreasury" class="panel moduleCard"><div class="section-title">Treasury</div><h2>Bills & Debt</h2><p class="muted">Upcoming tribute, disappearing debt, and a suspicious portal.</p></section>
     <section class="panel moduleCard"><div class="section-title">Sickbay</div><h2>Take Your Drugs</h2><p class="muted">Suspiciously simple by design.</p></section>
   </div></main>${nav()}`
-  wire();q('#openShopping').onclick=()=>{active='shopping';render()};q('#openTreasury').onclick=()=>{active='treasury';render()}
+  wire();q('#openShopping').onclick=()=>{active='shopping';render()};q('#openTreasury').onclick=()=>{active='treasury';render()};q('#openNotes').onclick=()=>{active='notes';render()}
 }
 async function shopping(){
   await ensureShoppingLists()
@@ -188,6 +189,174 @@ async function shoppingListsModal(){
   w.querySelectorAll('[data-ldel]').forEach(b=>b.onclick=async()=>{if(confirm('Delete this list? Its items will remain under no list.')){await supabase.from('shopping_lists').delete().eq('id',b.dataset.ldel);w.remove();shoppingListsModal()}})
 }
 
+
+
+const noteEmptyLines=['It’s giving... nothing.','Scanners detect: Fuck all.','This note is 0% note and 100% empty.','Bitch ate and left no crumbs and now wants to BRAG ABOUT IT','Have you got nothing to say to me?','Meow.','Meow-meow','Fucking stoners forgetting what a note is supposed to do...']
+const selfForYou=['Self-obsessed much?','God complex incoming...','Self-Love is impurrtant too....','Noooo, share with the claaass']
+const pinChaos=['The bridge has become a Post-it war crime.','Oh god, they’re swarming us!','We are surrounded by post-its.']
+const sealedLines=[
+ n=>`${n} left you something <3`,n=>`PRIVATE TRANSMISSION FROM ${n}`,n=>`You’ve got a thing!`,
+ n=>`SPECIAL DELIVERY`,n=>`Psst... ${n} sent you something.`,n=>`OI. CLICK ME.`,
+ n=>`Incoming affection... probably.`,n=>`TOP SECRET. FOR YOUR EYES ONLY.`,n=>`A wild love note appeared!`,n=>`You have mail! Like it’s 2003.`
+]
+const openedLines=['FOR YOU <3','SPECIAL DELIVERY','INCOMING TRANSMISSION','YOU’VE GOT LOVE','PSST...','A THING FOR YOU','PRIVATE TRANSMISSION','QUESTIONABLE INTENT DETECTED','OI. READ THIS.']
+const expiryLines=['THIS NOTE IS APPROACHING THE EVENT HORIZON.','THE VOID HAS NOTICED THIS NOTE.','SEVEN DAYS UNTIL THE ARCHIVE GODS DEMAND A DECISION.','THE PAPER DECAY PROTOCOL HAS BEGUN.','IT HAS ONE DAY LEFT. CHOOSE ITS FATE.']
+const logLines=['Entry recorded.','Added to the lore.','The record has been amended.','Captain’s log updated.','History has been burdened with this information.']
+const noteErrorLines=['Something has gone tits up in Comms.','a fucky-wucky seems to have happened in the note tubes','ouch, that note did not go where notes go....','WRONG HOLE — Comms edition','The post-it transporter has malfunctioned.']
+const reactionSet=['♥','HAHA','FUCK U','CAT','SUS','KISS']
+
+async function currentDisplayName(){
+  const {data}=await supabase.from('profiles').select('*').eq('id',session.user.id).maybeSingle()
+  return data?.nickname||data?.display_name||session.user.email?.split('@')[0]||'Crew'
+}
+async function crewProfiles(){
+  const ids=[household.owner_id,household.partner_id].filter(Boolean)
+  const {data}=await supabase.from('profiles').select('*').in('id',ids)
+  return data||[]
+}
+async function bridgeNotes(){
+  const box=q('#bridgeNotes');if(!box)return
+  try{
+    const {data,error}=await supabase.from('notes').select('*').eq('household_id',household.id).is('deleted_at',null).is('dismissed_at',null).eq('pinned',true).order('created_at',{ascending:false})
+    if(error)throw error
+    const mine=(data||[]).filter(n=>!n.recipient_user_id||n.recipient_user_id===session.user.id||n.author_user_id===session.user.id)
+    box.innerHTML=mine.length?mine.slice(0,5).map(n=>`<div class="bridgeMiniNote" style="background:${n.color}33"><b>${n.note_type==='for_you'&&n.recipient_user_id===session.user.id&&!n.opened_at?'SEALED TRANSMISSION':E((n.body||'Doodle').slice(0,90))}</b><div class="muted">from ${E(n.author_name_snapshot)}</div></div>`).join('')+(mine.length>5?`<button id="moreBridgeNotes" class="ghost">+${mine.length-5} MORE NOTES</button>`:''):'<span class="muted">Empy :(</span>'
+    if(q('#moreBridgeNotes'))q('#moreBridgeNotes').onclick=()=>{active='notes';render()}
+  }catch(e){box.textContent='Comms are making a suspicious noise.'}
+}
+let notesTab=localStorage.getItem('bridge_notes_tab')||'active'
+async function notes(){
+  app.innerHTML=`<main class="shell">${top('Notes')}<div class="agendaToolbar"><div><h1 class="pageTitle">Notes & Doodles</h1><div class="muted">Household communications of varying strategic importance.</div></div><div><button id="newSticky" class="primary">STICKY</button> <button id="newForYou" class="ghost">FOR YOU</button> <button id="newDoodle" class="ghost">DOODLE</button></div></div>
+  <div class="noteFilters"><button data-nt="active" class="${notesTab==='active'?'active':''}">NOTES</button><button data-nt="love" class="${notesTab==='love'?'active':''}">Making loveNOTES</button><button data-nt="bin" class="${notesTab==='bin'?'active':''}">BIN</button></div><section id="notesStage"><div class="panel card muted">Unfolding tiny pieces of paper…</div></section></main>${nav()}`
+  wire();q('#newSticky').onclick=()=>noteModal('sticky');q('#newForYou').onclick=()=>noteModal('for_you');q('#newDoodle').onclick=()=>doodleModal()
+  qa('[data-nt]').forEach(b=>b.onclick=()=>{notesTab=b.dataset.nt;localStorage.setItem('bridge_notes_tab',notesTab);notes()})
+  await drawNotes()
+}
+async function drawNotes(){
+  const stage=q('#notesStage');if(!stage)return
+  try{
+    const {data,error}=await supabase.from('notes').select('*').eq('household_id',household.id).order('created_at',{ascending:false});if(error)throw error
+    let ns=data||[]
+    if(notesTab==='active')ns=ns.filter(n=>!n.deleted_at&&!n.hoarded_at)
+    if(notesTab==='love')ns=ns.filter(n=>!n.deleted_at&&n.hoarded_at)
+    if(notesTab==='bin')ns=ns.filter(n=>n.deleted_at)
+    const title=notesTab==='love'?'<div class="loveNotesTitle">Making <span class="loveNOTES">loveNOTES</span></div>':notesTab==='bin'?'<div class="section-title">7-day bin</div>':'<div class="section-title">Current transmissions</div>'
+    stage.innerHTML=`<section class="panel card">${title}<div class="noteBoard" style="margin-top:14px">${ns.length?ns.map(noteCard).join(''):`<div class="empty">${notesTab==='love'?'Time to hoard some LOVE':notesTab==='bin'?'The bin is blessedly empty.':'Empy :('}</div>`}</div></section>`
+    wireNoteCards(ns)
+  }catch(e){noteError(e)}
+}
+function expiryWarning(n){
+  if(n.hoarded_at||n.deleted_at)return ''
+  const days=Math.ceil((new Date(n.expires_at)-new Date())/86400000)
+  if(days===7||days===1||days<=0)return `<div class="noteExpiry">${E(days<=1?pick(expiryLines.slice(3)):pick(expiryLines.slice(0,3)))} ${days>0?`${days} day${days===1?'':'s'} remain.`:'Archive it or let it go.'}</div>`
+  return ''
+}
+function noteCard(n){
+  const sealed=n.note_type==='for_you'&&n.recipient_user_id===session.user.id&&!n.opened_at
+  if(sealed){const f=pick(sealedLines);return `<article class="sticky sealedNote" style="background:${n.color}" data-open="${n.id}"><div><div class="sealedMark">✦</div><div class="sealedCopy">${E(f(n.author_name_snapshot))}</div><div class="noteMeta">${dateText(n.created_at)}</div></div></article>`}
+  const editable=n.author_user_id===session.user.id
+  const deleted=!!n.deleted_at
+  return `<article class="sticky ${deleted?'recycleCard':''}" style="background:${n.color}"><div class="noteTop"><div class="noteTo">${n.recipient_name_snapshot?`TO ${E(n.recipient_name_snapshot)}`:'ON THE FRIDGE'}</div><div>${n.pinned?'PINNED':''}</div></div><div class="noteBody">${E(n.body||'')}</div>${n.photo_path?'<div class="noteMeta">PHOTO ATTACHED</div>':''}${n.doodle_path?'<div class="noteMeta">DOODLE ATTACHED</div>':''}${n.needs_action?`<div class="noteReminder">${n.action_completed_at?`✓ QUEST COMPLETED · ${dateText(n.action_completed_at)} ${timeText(n.action_completed_at)}`:'QUEST ACTIVE'}</div>`:''}${n.reminder_at?`<div class="noteReminder">Reminder: ${dateText(n.reminder_at)} · ${timeText(n.reminder_at)}</div>`:''}${expiryWarning(n)}<div class="noteMeta">from ${E(n.author_name_snapshot)} · ${dateText(n.created_at)} ${timeText(n.created_at)}${new Date(n.updated_at)-new Date(n.created_at)>1000?` · edited at ${timeText(n.updated_at)}`:''}</div>
+  <div class="reactionStrip">${reactionSet.map(r=>`<button class="reactionBtn" data-react="${n.id}" data-r="${E(r)}">${E(r)}</button>`).join('')}</div>
+  <div class="noteActions">${!deleted&&editable?`<button data-editnote="${n.id}">EDIT</button>`:''}${!deleted&&!n.hoarded_at?`<button data-pin="${n.id}">${n.pinned?'UNPIN':'PIN THIS BABY'}</button>`:''}${!deleted&&n.recipient_user_id===session.user.id&&!n.dismissed_at?`<button data-dismiss="${n.id}">TRANSMISSION RECEIVED</button>`:''}${!deleted&&!n.hoarded_at?`<button data-hoard="${n.id}">HOARD THIS</button>`:''}${!deleted&&n.needs_action&&!n.action_completed_at?`<button data-quest="${n.id}">QUEST COMPLETED</button>`:''}${!deleted&&!n.captain_log_saved_at?`<button data-lognote="${n.id}">ADD TO CAPTAIN'S LOG</button>`:''}${!deleted?`<button data-thread="${n.id}">COMMENTS</button><button data-history="${n.id}">HISTORY</button>${editable?`<button data-destroy="${n.id}">DESTROY</button>`:''}`:`<button data-restore="${n.id}">RESTORE</button><button data-permadelete="${n.id}">DELETE FOREVER</button>`}</div></article>`
+}
+function wireNoteCards(ns){
+  qa('[data-open]').forEach(b=>b.onclick=()=>openForYou(b.dataset.open))
+  qa('[data-editnote]').forEach(b=>b.onclick=()=>noteModal(null,b.dataset.editnote))
+  qa('[data-pin]').forEach(b=>b.onclick=async()=>{const n=ns.find(x=>x.id===b.dataset.pin);await supabase.from('notes').update({pinned:!n.pinned,updated_at:new Date().toISOString()}).eq('id',n.id);if(!n.pinned){const pinned=ns.filter(x=>x.pinned&&!x.deleted_at).length;if(pinned>=5)toast(pick(pinChaos))}drawNotes();bridgeNotes()})
+  qa('[data-dismiss]').forEach(b=>b.onclick=async()=>{await supabase.from('notes').update({dismissed_at:new Date().toISOString(),pinned:false,updated_at:new Date().toISOString()}).eq('id',b.dataset.dismiss);toast('TRANSMISSION RECEIVED');drawNotes();bridgeNotes()})
+  qa('[data-hoard]').forEach(b=>b.onclick=async()=>{await supabase.from('notes').update({hoarded_at:new Date().toISOString(),pinned:false,updated_at:new Date().toISOString()}).eq('id',b.dataset.hoard);toast('Added to Making loveNOTES <3');drawNotes();bridgeNotes()})
+  qa('[data-quest]').forEach(b=>b.onclick=async()=>{await supabase.from('notes').update({action_completed_at:new Date().toISOString(),action_completed_by:session.user.id,updated_at:new Date().toISOString()}).eq('id',b.dataset.quest);toast('QUEST COMPLETED');drawNotes()})
+  qa('[data-destroy]').forEach(b=>b.onclick=()=>softDeleteNote(b.dataset.destroy))
+  qa('[data-restore]').forEach(b=>b.onclick=async()=>{await supabase.from('notes').update({deleted_at:null,updated_at:new Date().toISOString()}).eq('id',b.dataset.restore);toast('Resurrected.');drawNotes()})
+  qa('[data-permadelete]').forEach(b=>b.onclick=()=>permanentDeleteNote(b.dataset.permadelete))
+  qa('[data-lognote]').forEach(b=>b.onclick=()=>saveNoteToLog(b.dataset.lognote))
+  qa('[data-thread]').forEach(b=>b.onclick=()=>noteThreadModal(b.dataset.thread))
+  qa('[data-history]').forEach(b=>b.onclick=()=>noteHistoryModal(b.dataset.history))
+  qa('[data-react]').forEach(b=>b.onclick=()=>reactNote(b.dataset.react,b.dataset.r,ns.find(x=>x.id===b.dataset.react)))
+}
+async function openForYou(id){
+  const n=(await supabase.from('notes').select('*').eq('id',id).single()).data;if(!n)return
+  await supabase.from('notes').update({opened_at:new Date().toISOString(),updated_at:new Date().toISOString()}).eq('id',id)
+  const w=document.createElement('div');w.className='modalWrap';w.innerHTML=`<section class="panel modal" style="background:${n.color}"><div class="section-title">${E(pick(openedLines))}</div><div class="noteBody">${E(n.body||'')}</div><div class="noteMeta">from ${E(n.author_name_snapshot)}</div><div class="noteActions"><button id="oyPin">PIN THIS BABY</button><button id="oyHoard">HOARD THIS</button><button id="oyReceived">TRANSMISSION RECEIVED</button></div></section>`;document.body.appendChild(w)
+  w.querySelector('#oyPin').onclick=async()=>{await supabase.from('notes').update({pinned:true,dismissed_at:null}).eq('id',id);w.remove();drawNotes();bridgeNotes()}
+  w.querySelector('#oyHoard').onclick=async()=>{await supabase.from('notes').update({hoarded_at:new Date().toISOString(),pinned:false}).eq('id',id);w.remove();toast('Added to Making loveNOTES <3');drawNotes();bridgeNotes()}
+  w.querySelector('#oyReceived').onclick=async()=>{await supabase.from('notes').update({dismissed_at:new Date().toISOString(),pinned:false}).eq('id',id);w.remove();drawNotes();bridgeNotes()}
+}
+async function noteModal(type='sticky',id=null){
+  const profiles=await crewProfiles(),me=await currentDisplayName(),n=id?(await supabase.from('notes').select('*').eq('id',id).single()).data:null
+  if(n&&n.author_user_id!==session.user.id)return toast('Only the author gets to rewrite history. Everyone else gets receipts.')
+  type=n?.note_type||type||'sticky'
+  const w=document.createElement('div');w.className='modalWrap'
+  w.innerHTML=`<section class="panel modal"><div class="section-title">${id?'Edit':'New'} ${type==='for_you'?'For You note':type==='doodle'?'doodle note':'sticky'}</div><form id="nf" class="formGrid"><div class="field full"><label>To</label><select id="nr"><option value="">Both / fridge</option>${profiles.map(x=>{const nm=x.nickname||x.display_name||x.email||'Crew';return `<option value="${x.id}" ${n?.recipient_user_id===x.id?'selected':''}>${E(nm)}</option>`}).join('')}</select></div><div class="field full"><label>Note</label><textarea id="nb" rows="6">${E(n?.body||'')}</textarea></div><div class="field"><label>Colour</label><input id="nc" type="color" value="${n?.color||'#8b526a'}"></div><div class="field"><label><input id="na" type="checkbox" ${n?.needs_action?'checked':''}> Needs action</label></div><div class="field full"><label>Reminder (optional)</label><input id="nrem" type="datetime-local" value="${n?.reminder_at?new Date(n.reminder_at).toISOString().slice(0,16):''}"></div><div class="field full"><label>Photo (optional)</label><input id="nphoto" type="file" accept="image/*"></div><div class="full"><button class="primary">${id?'SAVE':'SEND IT'}</button> <button id="ncancel" type="button" class="ghost">Cancel</button></div><p id="nerr" class="error full"></p></form></section>`
+  document.body.appendChild(w);w.querySelector('#ncancel').onclick=()=>w.remove()
+  w.querySelector('#nf').onsubmit=async e=>{e.preventDefault();const body=w.querySelector('#nb').value.trim(),file=w.querySelector('#nphoto').files[0];if(!body&&!file&&!n?.doodle_path)return w.querySelector('#nerr').textContent=pick(noteEmptyLines)
+    const rid=w.querySelector('#nr').value||null;if(type==='for_you'&&rid===session.user.id)return w.querySelector('#nerr').textContent=pick(selfForYou)
+    try{
+      const rp=profiles.find(x=>x.id===rid),rname=rp?(rp.nickname||rp.display_name||rp.email||'Crew'):null
+      let photo=n?.photo_path||null;if(file)photo=await uploadNoteImage(file)
+      const payload={household_id:household.id,recipient_user_id:rid,recipient_name_snapshot:id?n.recipient_name_snapshot:rname,note_type:type,body,color:w.querySelector('#nc').value,needs_action:w.querySelector('#na').checked,reminder_at:w.querySelector('#nrem').value?new Date(w.querySelector('#nrem').value).toISOString():null,photo_path:photo,updated_at:new Date().toISOString()}
+      if(id){
+        await supabase.from('note_versions').insert({household_id:household.id,note_id:n.id,body:n.body,color:n.color,needs_action:n.needs_action,reminder_at:n.reminder_at,photo_path:n.photo_path,doodle_path:n.doodle_path,saved_by:session.user.id})
+        const r=await supabase.from('notes').update(payload).eq('id',id);if(r.error)throw r.error
+      }else{
+        payload.author_user_id=session.user.id;payload.author_name_snapshot=me;const r=await supabase.from('notes').insert(payload);if(r.error)throw r.error
+      }
+      w.remove();toast(type==='for_you'?'Transmission sent <3':'Note stuck successfully.');if(active==='notes')drawNotes();bridgeNotes()
+    }catch(err){w.querySelector('#nerr').textContent=pick(noteErrorLines);console.error(err)}
+  }
+}
+async function compressImage(file,max=1280,quality=.72){
+  const bmp=await createImageBitmap(file),scale=Math.min(1,max/Math.max(bmp.width,bmp.height)),c=document.createElement('canvas');c.width=Math.round(bmp.width*scale);c.height=Math.round(bmp.height*scale);c.getContext('2d').drawImage(bmp,0,0,c.width,c.height);return await new Promise(r=>c.toBlob(r,'image/jpeg',quality))
+}
+async function uploadNoteImage(file){
+  const blob=await compressImage(file),path=`${household.id}/${session.user.id}/${Date.now()}.jpg`;const r=await supabase.storage.from('note-media').upload(path,blob,{contentType:'image/jpeg'});if(r.error)throw r.error;return path
+}
+async function doodleModal(){
+  const w=document.createElement('div');w.className='modalWrap';w.innerHTML=`<section class="panel modal"><div class="section-title">Doodle transmission</div><div class="canvasTools"><label>Photo underlay <input id="dphoto" type="file" accept="image/*"></label><label>Pen <input id="dsize" type="range" min="2" max="24" value="5"></label><button id="derase" class="ghost">ERASER</button><button id="dundo" class="ghost">UNDO</button></div><div id="dpal" class="palettePanels"></div><canvas id="dc" class="doodleCanvas"></canvas><div class="field"><label>Caption</label><input id="dcap"></div><button id="dsend" class="primary">SEND DOODLE</button> <button id="dcancel" class="ghost">Cancel</button><p id="derr" class="error"></p></section>`;document.body.appendChild(w)
+  const c=w.querySelector('#dc'),ctx=c.getContext('2d'),palette=['#ffffff','#ff416d','#ff8fb0','#62a978','#8bc7ff','#ffd65a','#b68cff','#111111'];let col=palette[0],drawing=false,last=null,history=[]
+  function sizeCanvas(){const r=c.getBoundingClientRect();c.width=Math.max(600,Math.round(r.width*devicePixelRatio));c.height=Math.round(r.height*devicePixelRatio);ctx.scale(devicePixelRatio,devicePixelRatio)}
+  sizeCanvas();w.querySelector('#dpal').innerHTML=palette.map((x,i)=>`<button class="palettePanel ${i===0?'selected':''}" style="background:${x}" data-col="${x}"></button>`).join('')
+  w.querySelectorAll('[data-col]').forEach(b=>b.onclick=()=>{col=b.dataset.col;w.querySelectorAll('[data-col]').forEach(x=>x.classList.remove('selected'));b.classList.add('selected')})
+  c.onpointerdown=e=>{history.push(c.toDataURL());drawing=true;last=[e.offsetX,e.offsetY]}
+  c.onpointermove=e=>{if(!drawing)return;ctx.strokeStyle=col;ctx.lineWidth=Number(w.querySelector('#dsize').value);ctx.lineCap='round';ctx.beginPath();ctx.moveTo(...last);ctx.lineTo(e.offsetX,e.offsetY);ctx.stroke();last=[e.offsetX,e.offsetY]}
+  c.onpointerup=c.onpointerleave=()=>drawing=false
+  w.querySelector('#derase').onclick=()=>col='#111111'
+  w.querySelector('#dundo').onclick=()=>{const x=history.pop();if(!x)return;const im=new Image();im.onload=()=>{ctx.clearRect(0,0,c.width,c.height);ctx.drawImage(im,0,0,c.width/devicePixelRatio,c.height/devicePixelRatio)};im.src=x}
+  w.querySelector('#dphoto').onchange=e=>{const f=e.target.files[0];if(!f)return;const im=new Image();im.onload=()=>{history.push(c.toDataURL());ctx.drawImage(im,0,0,c.width/devicePixelRatio,c.height/devicePixelRatio)};im.src=URL.createObjectURL(f)}
+  w.querySelector('#dcancel').onclick=()=>w.remove()
+  w.querySelector('#dsend').onclick=async()=>{if(!history.length&&!w.querySelector('#dcap').value.trim())return w.querySelector('#derr').textContent=pick(['The canvas has achieved enlightenment: absolutely nothing is on it.','You drew the invisible man. Try again.','Scanners detect no doodle. The pen union is furious.'])
+    try{const blob=await new Promise(r=>c.toBlob(r,'image/png')),path=`${household.id}/${session.user.id}/${Date.now()}-doodle.png`;const ur=await supabase.storage.from('note-media').upload(path,blob,{contentType:'image/png'});if(ur.error)throw ur.error;const me=await currentDisplayName();const r=await supabase.from('notes').insert({household_id:household.id,author_user_id:session.user.id,author_name_snapshot:me,note_type:'doodle',body:w.querySelector('#dcap').value.trim()||null,doodle_path:path,color:'#242126'});if(r.error)throw r.error;w.remove();toast('Doodle deployed.');if(active==='notes')drawNotes();bridgeNotes()}catch(e){w.querySelector('#derr').textContent=pick(noteErrorLines)}
+  }
+}
+async function reactNote(id,reaction,n){
+  if(n?.author_user_id===session.user.id)toast(`${await currentDisplayName()} hurt themself in their own confusion.`)
+  const ex=(await supabase.from('note_reactions').select('id').eq('note_id',id).eq('user_id',session.user.id).eq('reaction',reaction).maybeSingle()).data
+  if(ex)await supabase.from('note_reactions').delete().eq('id',ex.id);else await supabase.from('note_reactions').insert({household_id:household.id,note_id:id,user_id:session.user.id,reaction})
+}
+async function noteThreadModal(id){
+  const w=document.createElement('div');w.className='modalWrap';w.innerHTML=`<section class="panel modal"><div class="section-title">Comment thread</div><div id="threadBody">Loading gossip…</div><div class="field"><label>Reply</label><textarea id="reply"></textarea></div><button id="replySend" class="primary">SEND</button> <button id="threadClose" class="ghost">Done</button></section>`;document.body.appendChild(w)
+  async function load(){const {data}=await supabase.from('note_comments').select('*').eq('note_id',id).order('created_at');w.querySelector('#threadBody').innerHTML=data?.length?data.map(x=>`<div class="comment"><span class="commentName">${E(x.author_name_snapshot)}</span>: ${E(x.body)}<div class="noteMeta">${dateText(x.created_at)} ${timeText(x.created_at)}</div></div>`).join(''):'<div class="muted">Nobody has yapped here yet.</div>'}
+  await load();w.querySelector('#threadClose').onclick=()=>w.remove();w.querySelector('#replySend').onclick=async()=>{const body=w.querySelector('#reply').value.trim();if(!body)return;await supabase.from('note_comments').insert({household_id:household.id,note_id:id,author_user_id:session.user.id,author_name_snapshot:await currentDisplayName(),body});w.querySelector('#reply').value='';load()}
+}
+async function noteHistoryModal(id){
+  const {data}=await supabase.from('note_versions').select('*').eq('note_id',id).order('saved_at',{ascending:false});const w=document.createElement('div');w.className='modalWrap';w.innerHTML=`<section class="panel modal"><div class="section-title">Note history</div>${data?.length?data.map(v=>`<div class="historyVersion"><div>${E(v.body||'(no text)')}</div><div class="noteMeta">${dateText(v.saved_at)} ${timeText(v.saved_at)}</div></div>`).join(''):'<div class="muted">No rewrites yet. The original canon stands.</div>'}<button id="vhclose" class="ghost">Done</button></section>`;document.body.appendChild(w);w.querySelector('#vhclose').onclick=()=>w.remove()
+}
+async function softDeleteNote(id){
+  if(!confirm(pick(['You sure?','Deleting this won’t delete it from memory <3','Perchance you change your mind?','Send this note to the 7-day void?'])))return
+  await supabase.from('notes').update({deleted_at:new Date().toISOString(),pinned:false,updated_at:new Date().toISOString()}).eq('id',id);toast('Into the bin it goes. Seven days to regret this.');drawNotes();bridgeNotes()
+}
+function permanentDanger(onYes){
+  const d=document.createElement('div');d.className='permaDanger';d.innerHTML=`<div class="permaDangerBox"><h1>ARE YOU SURE?</h1><p>This is permanent. We cannot get this back.</p><p>${E(pick(['Like, GONE gone.','There is no Ctrl+Z after this.','Last chance, bestie.','The void does not issue refunds.']))}</p><div class="permaDangerActions"><button id="dangerNo">NO WAIT</button><button id="dangerYes">YES, DESTROY IT</button></div></div>`;document.body.appendChild(d);d.querySelector('#dangerNo').onclick=()=>d.remove();d.querySelector('#dangerYes').onclick=async()=>{await onYes();d.remove()}
+}
+async function permanentDeleteNote(id){
+  permanentDanger(async()=>{const r=await supabase.from('notes').delete().eq('id',id);if(r.error)return noteError(r);toast('Gone gone.');drawNotes()})
+}
+async function saveNoteToLog(id){
+  const n=(await supabase.from('notes').select('*').eq('id',id).single()).data;if(!n)return
+  const r=await supabase.from('captains_log').insert({household_id:household.id,source_note_id:n.id,title:n.note_type==='for_you'?'For You transmission':'Saved note',body:n.body,author_user_id:n.author_user_id,author_name_snapshot:n.author_name_snapshot,photo_path:n.photo_path,doodle_path:n.doodle_path});if(r.error)return noteError(r);await supabase.from('notes').update({captain_log_saved_at:new Date().toISOString()}).eq('id',id);toast(pick(logLines));drawNotes()
+}
+function noteError(err){console.error(err);toast(pick(noteErrorLines),5000)}
 
 const pick=a=>a[Math.floor(Math.random()*a.length)]
 const moneyLines={
@@ -327,13 +496,13 @@ async function drawAgendaBills(){
     box.innerHTML=`<div class="section-title">Treasury radar</div>${bills.length?bills.map(b=>`<div class="billAgenda"><span class="billRadar"></span><b>${E(b.name)}</b> · ${eur(b.amount)} · ${dateText(b.due_at)}${billUrgency(b)?`<div class="muted">${E(billUrgency(b))}</div>`:''}</div>`).join(''):`<div class="muted">${E(pick(moneyLines.emptyBills))}</div>`}`
   }catch(e){box.innerHTML=`<div class="error">${E(pick(moneyLines.errors))}</div>`}
 }
-let treasuryTab='bills'
+let treasuryTab=localStorage.getItem('bridge_treasury_tab')||'bills'
 async function treasury(){
   app.innerHTML=`<main class="shell">${top('Treasury')}<div class="agendaToolbar"><div><h1 class="pageTitle">Treasury</h1><div class="muted">Unfortunately, numbers continue to exist.</div></div><div><button id="addBill" class="primary">ADD BILL</button> <button id="addDebt" class="ghost">ADD DEBT</button></div></div>
   <div class="treasuryTabs"><button data-moneytab="bills" class="${treasuryTab==='bills'?'active':''}">BILLS</button><button data-moneytab="debt" class="${treasuryTab==='debt'?'active':''}">DEBT</button><button data-moneytab="history" class="${treasuryTab==='history'?'active':''}">HISTORY</button></div>
   <section id="treasuryStage"><div class="panel card muted">Counting beans…</div></section></main>${nav()}`
   wire();q('#addBill').onclick=()=>billModal();q('#addDebt').onclick=()=>debtModal()
-  qa('[data-moneytab]').forEach(b=>b.onclick=()=>{treasuryTab=b.dataset.moneytab;treasury()})
+  qa('[data-moneytab]').forEach(b=>b.onclick=()=>{treasuryTab=b.dataset.moneytab;localStorage.setItem('bridge_treasury_tab',treasuryTab);treasury()})
   await drawTreasury()
 }
 async function drawTreasury(){
@@ -495,8 +664,17 @@ async function trophyRoom(){
   try{const {data,error}=await supabase.from('debts').select('*').eq('household_id',household.id).not('defeated_at','is',null).order('defeated_at',{ascending:false});if(error)throw error;q('#trophies').innerHTML=data?.length?data.map(d=>`<article class="trophy"><div class="trophySeal">0 HP</div><h2>${E(d.name)}</h2><div class="muted">${eur(d.original_balance)} defeated</div><div>${dateText(d.defeated_at)}</div></article>`).join(''):`<div class="empty">${E(pick(moneyLines.trophyEmpty))}</div>`}catch(e){moneyError(e)}
 }
 
+
+async function captainsLog(){
+  app.innerHTML=`<main class="shell">${top("Captain's Log")}<h1 class="pageTitle">Captain's Log</h1><section class="panel card"><div class="section-title">Permanent record</div><div id="logEntries">Consulting the archives…</div></section></main>${nav()}`;wire()
+  const {data,error}=await supabase.from('captains_log').select('*').eq('household_id',household.id).order('created_at',{ascending:false});if(error)return noteError(error)
+  q('#logEntries').innerHTML=data?.length?data.map(x=>`<div class="historyRow"><b>${E(x.title||'Log entry')}</b><div>${E(x.body||'')}</div><div class="muted">${E(x.author_name_snapshot||'Crew')} · ${dateText(x.created_at)} ${timeText(x.created_at)}</div></div>`).join(''):'<div class="empty">The historical record is suspiciously quiet.</div>'
+}
+
 function placeholder(t){app.innerHTML=`<main class="shell">${top(t)}<section class="panel card"><h1 class="pageTitle">${E(t)}</h1><p class="muted">Coming soon.</p></section></main>${nav()}`;wire()}
-function render(){document.body.classList.remove('shoppingMode');if(active==='bridge')bridge();else if(active==='crew')crew();else if(active==='agenda')agenda();else if(active==='more')more();else if(active==='shopping')shopping();else if(active==='treasury')treasury();else if(active==='trophy')trophyRoom();else placeholder(active==='log'?"Captain's Log":active[0].toUpperCase()+active.slice(1))}
+function render(){
+localStorage.setItem('bridge_active',active);
+document.body.classList.remove('shoppingMode');if(active==='bridge')bridge();else if(active==='crew')crew();else if(active==='agenda')agenda();else if(active==='more')more();else if(active==='shopping')shopping();else if(active==='treasury')treasury();else if(active==='trophy')trophyRoom();else if(active==='notes')notes();else if(active==='log')captainsLog();else placeholder(active[0].toUpperCase()+active.slice(1))}
 function subscribe(){if(channel)supabase.removeChannel(channel);channel=supabase.channel('bridge-'+household.id).on('postgres_changes',{event:'*',schema:'public',table:'cat_feedings',filter:`household_id=eq.${household.id}`},()=>{if(active==='bridge')loadCats()}).on('postgres_changes',{event:'*',schema:'public',table:'tasks',filter:`household_id=eq.${household.id}`},()=>{if(active==='agenda')drawAgenda();if(active==='bridge')bridgeTasks()}).on('postgres_changes',{event:'*',schema:'public',table:'task_categories',filter:`household_id=eq.${household.id}`},()=>{if(active==='agenda')drawAgenda()})
 .on('postgres_changes',{event:'*',schema:'public',table:'shopping_items',filter:`household_id=eq.${household.id}`},payload=>{
   if(active==='shopping'){
@@ -511,6 +689,10 @@ function subscribe(){if(channel)supabase.removeChannel(channel);channel=supabase
 .on('postgres_changes',{event:'*',schema:'public',table:'bill_payments',filter:`household_id=eq.${household.id}`},()=>{if(active==='treasury')drawTreasury()})
 .on('postgres_changes',{event:'*',schema:'public',table:'debts',filter:`household_id=eq.${household.id}`},()=>{if(active==='treasury'&&treasuryTab==='debt')drawDebts();if(active==='trophy')trophyRoom()})
 .on('postgres_changes',{event:'*',schema:'public',table:'debt_events',filter:`household_id=eq.${household.id}`},()=>{if(active==='treasury'&&treasuryTab==='history')drawMoneyHistory()})
+.on('postgres_changes',{event:'*',schema:'public',table:'notes',filter:`household_id=eq.${household.id}`},()=>{if(active==='notes')drawNotes();if(active==='bridge')bridgeNotes()})
+.on('postgres_changes',{event:'*',schema:'public',table:'note_comments',filter:`household_id=eq.${household.id}`},()=>{})
+.on('postgres_changes',{event:'*',schema:'public',table:'note_reactions',filter:`household_id=eq.${household.id}`},()=>{})
+.on('postgres_changes',{event:'*',schema:'public',table:'captains_log',filter:`household_id=eq.${household.id}`},()=>{if(active==='log')captainsLog()})
 .subscribe()}
 async function boot(){if(!configured)return auth();session=(await supabase.auth.getSession()).data.session;if(session){await userData();if(household){await ensureCategories();await ensureShoppingLists();subscribe();render()}else onboard()}else auth();supabase.auth.onAuthStateChange(async(_,s)=>{session=s;if(!s){profile=household=null;return auth()}await userData();if(household){await ensureCategories();await ensureShoppingLists();subscribe();render()}else onboard()})}
 boot()
