@@ -124,3 +124,52 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
   outline:3px solid #fff;
   outline-offset:3px;
 }
+
+
+/* ===== v0.7.2 mobile-first usability pass ===== */
+body{font-size:16px;line-height:1.45}
+button,input,select,textarea{min-height:44px}
+button{cursor:pointer}
+.shell{padding-bottom:92px}
+.panel{border-radius:18px}
+.section-title{letter-spacing:.07em}
+.bridgeStickyGrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:13px;padding-top:6px}
+.bridgePaper{position:relative;min-height:150px;padding:15px;border-radius:4px;background:var(--paper,#735063);color:var(--paperText,#fff);box-shadow:0 8px 18px #0006;border:1px solid #ffffff35;overflow:visible;transform:rotate(-.6deg);touch-action:manipulation}
+.bridgePaper:nth-child(even){transform:rotate(.7deg)}
+.bridgePaper:focus-visible{outline:3px solid #fff;outline-offset:4px}
+.bridgeSticky{border-radius:3px 3px 8px 3px}
+.bridgeDoodle{background:#f2eee7;color:#151515;border-radius:3px;transform:rotate(.4deg)}
+.bridgeDoodle img{background:#fff}
+.bridgePaper img{display:block;width:100%;max-height:210px;object-fit:contain;border-radius:4px;margin:7px 0;background:#111}
+.bridgePaperTo{font-size:.7rem;font-weight:950;letter-spacing:.07em;opacity:.88}
+.bridgePaperBody{font-size:1rem;font-weight:750;white-space:pre-wrap;margin:8px 0}
+.bridgePaperFrom{font-size:.75rem;font-weight:800;opacity:.9;margin-top:8px}
+.bridgePaperReactions{display:flex;gap:4px;flex-wrap:wrap;margin-top:10px}
+.bridgePaperReactions .reactionBtn{min-height:34px;padding:5px 7px;font-size:.72rem}
+.bridgeEnvelope{display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;border-radius:7px;min-height:150px;padding-top:45px}
+.envelopeFlap{position:absolute;left:0;right:0;top:0;height:58%;clip-path:polygon(0 0,100% 0,50% 76%);background:color-mix(in srgb,var(--paper) 82%,white);border-radius:6px 6px 0 0}
+.envelopeSeal{position:relative;z-index:2;display:grid;place-items:center;width:38px;height:38px;border-radius:50%;background:#181014;color:#fff;font-size:1.1rem;margin-bottom:9px}
+.bridgeEnvelope b,.bridgeEnvelope small{position:relative;z-index:2}
+.bridgeNoteMenu{display:none;position:absolute;z-index:20;left:10px;right:10px;top:52px;background:#08090c;color:#fff;border:1px solid #6d6268;border-radius:13px;padding:7px;box-shadow:0 14px 35px #000c}
+.bridgeNoteMenu.open{display:grid;gap:5px}
+.bridgeNoteMenu button{width:100%;text-align:left;background:#16171b;color:#fff;border:1px solid #4e484c;border-radius:9px;padding:9px 11px;font-weight:850}
+.noteDetailWrap{align-items:flex-end}
+.noteDetail{position:relative;width:min(620px,100%);max-height:88vh;overflow:auto;background:var(--paper,#19171a);color:var(--paperText,#fff);border-radius:20px 20px 0 0;padding:22px}
+.noteDetail .bridgeNoteMenu{position:static;margin-top:9px}
+.detailClose{position:absolute;right:12px;top:10px;width:44px;min-height:44px;border-radius:50%;font-size:1.6rem;background:#08090c;color:#fff;border:1px solid #625a60}
+.medQuick{display:flex;justify-content:space-between;gap:10px;align-items:center}
+.bridgeMeds{cursor:pointer}
+.nav button,.bottomNav button{min-height:54px}
+.formGrid{gap:14px}
+.field label{font-weight:800;margin-bottom:5px}
+input,select,textarea{font-size:16px;padding:11px 12px}
+@media(max-width:560px){
+  .shell{padding-left:12px;padding-right:12px}
+  .bridgeStickyGrid{grid-template-columns:1fr 1fr;gap:10px}
+  .bridgePaper{min-height:138px;padding:12px}
+  .bridgePaperBody{font-size:.95rem}
+  .bridgePaperReactions{gap:3px}
+  .bridgePaperReactions .reactionBtn{font-size:.68rem;padding:4px 5px}
+  .agendaToolbar{gap:10px}
+}
+@media(max-width:370px){.bridgeStickyGrid{grid-template-columns:1fr}}

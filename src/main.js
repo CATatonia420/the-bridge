@@ -30,8 +30,9 @@ const timeText=x=>x?new Date(x).toLocaleTimeString('en-IE',{hour:'2-digit',minut
 function overdue(t){if(!t.due_at||t.status==='done')return'';const h=(Date.now()-new Date(t.due_at))/36e5;if(h<=0)return'';if(h<6)return'<div class="over1">Temporal hiccup detected.</div>';if(h<24)return'<div class="over2">This has become mildly embarrassing.</div>';if(h<72)return'<div class="over3">TEMPORAL ANOMALY DETECTED.</div>';return'<div class="over4">WE HAVE ABANDONED THE TIMELINE.</div>'}
 
 async function bridge(){
- app.innerHTML=`<main class="shell">${top()}<div id="hunger"></div><div class="grid"><section class="panel hero"><span class="muted">CURRENTLY ABOARD:</span><h1>${E(profile?.display_name)}</h1><div>Why don't starships ever get lost?<br><span class="muted">They always follow their enterprise.</span></div></section><section class="panel card cats"><div class="section-title">The children</div><div id="cats" class="catrow">Scanning…</div></section><section class="panel card agenda"><div class="section-title">Today</div><div id="todayTasks" class="muted">Consulting the timeline…</div></section><section class="panel card ops"><div class="section-title">Upcoming tribute</div><div id="bridgeBills" class="muted">Sweeping financial radar…</div></section><section class="panel card ops"><div class="section-title">Notes on the console</div><div id="bridgeNotes" class="bridgeNotes"><span class="muted">Checking the post-its…</span></div></section></div></main><button id="plus" class="plus">+</button><section id="menu" class="panel menu" hidden><button id="quickNote">NOTE</button><button id="quickTask">TASK</button><button>PLAN</button><button id="quickStuff">STUFF</button><button id="quickMoney">MONEY</button></section>${nav()}`
- wire();q('#plus').onclick=()=>q('#menu').hidden=!q('#menu').hidden;q('#quickTask').onclick=()=>taskModal();q('#quickStuff').onclick=()=>shoppingItemModal();q('#quickMoney').onclick=()=>{active='treasury';render()};q('#quickNote').onclick=()=>noteModal();await Promise.all([loadCats(),bridgeTasks(),bridgeBills(),bridgeNotes()])
+ app.innerHTML=`<main class="shell">${top()}<div id="hunger"></div><div class="grid"><section class="panel hero"><span class="muted">CURRENTLY ABOARD:</span><h1>${E(profile?.display_name)}</h1><div>Why don't starships ever get lost?<br><span class="muted">They always follow their enterprise.</span></div></section><section class="panel card cats"><div class="section-title">The children</div><div id="cats" class="catrow">Scanning…</div></section><section class="panel card agenda"><div class="section-title">Today</div><div id="todayTasks" class="muted">Consulting the timeline…</div></section><section class="panel card ops"><div class="section-title">Upcoming tribute</div><div id="bridgeBills" class="muted">Sweeping financial radar…</div></section></div></main><button id="plus" class="plus">+</button><section id="menu" class="panel menu" hidden><button id="quickNote">NOTE</button><button id="quickTask">TASK</button><button>PLAN</button><button id="quickStuff">STUFF</button><button id="quickMoney">MONEY</button></section>${nav()}`
+ wire();q('#plus').onclick=()=>q('#menu').hidden=!q('#menu').hidden;q('#quickTask').onclick=()=>taskModal();q('#quickStuff').onclick=()=>shoppingItemModal();q('#quickMoney').onclick=()=>{active='treasury';render()};q('#quickNote').onclick=()=>noteModal();await Promise.all([loadCats(),bridgeTasks(),bridgeBills(),bridgeNotes()]);
+const meds=q('#bridgeMedsCard');if(meds){let mt;meds.onclick=()=>{active='drugs';render()};meds.onpointerdown=()=>{mt=setTimeout(()=>{localStorage.setItem('bridge_drugs_edit','1');active='drugs';render()},520)};meds.onpointerup=meds.onpointercancel=()=>clearTimeout(mt);meds.oncontextmenu=e=>{e.preventDefault();localStorage.setItem('bridge_drugs_edit','1');active='drugs';render()}}
 }
 async function bridgeTasks(){const box=q('#todayTasks');if(!box)return;const today=dateKey(new Date()),{data}=await supabase.from('tasks').select('*').eq('household_id',household.id).eq('status','needs_doing').order('due_at');const list=(data||[]).filter(t=>t.due_at&&dateKey(t.due_at)===today);box.innerHTML=list.length?list.slice(0,5).map(t=>`<div class="row"><span>${E(t.title)}</span><span>${t.all_day?'TODAY':timeText(t.due_at)}</span></div>`).join(''):'No disasters currently detected. Probably.'}
 async function loadCats(){const box=q('#cats'),hb=q('#hunger');if(!box)return;try{const cr=await supabase.from('cats').select('*,cat_feeding_schedules(*)').eq('household_id',household.id).order('name');if(cr.error)throw cr.error;const fr=await supabase.from('cat_feedings').select('*').eq('household_id',household.id).eq('feeding_date',dateKey(new Date())).order('recorded_at',{ascending:false});if(fr.error)throw fr.error;const fs=fr.data||[],users=[...new Set(fs.map(x=>x.recorded_by))],names={};if(users.length){for(const p of (await supabase.from('profiles').select('user_id,display_name').in('user_id',users)).data||[])names[p.user_id]=p.display_name}const now=new Date(),mins=now.getHours()*60+now.getMinutes();let lateAny=false;box.innerHTML=(cr.data||[]).map(c=>`<article class="cat"><div class="catname">${E(c.name)}</div><div class="muted">${E(c.breed)}</div><div class="bowls">${(c.cat_feeding_schedules||[]).sort((a,b)=>a.feeding_time.localeCompare(b.feeding_time)).map(s=>{const f=fs.find(x=>x.cat_id===c.id&&x.schedule_id===s.id),[h,m]=s.feeding_time.split(':').map(Number),late=!f&&mins>h*60+m+60;if(late)lateAny=true;return`<button class="bowl ${f?f.status:late?'overdue':''}" data-cat="${c.id}" data-sch="${s.id}" data-time="${s.feeding_time.slice(0,5)}">${s.feeding_time.slice(0,5)}<br>${f?f.status.toUpperCase():late?'HUNGRY':'○'}${f?`<div class="stamp">${E(names[f.recorded_by]||'Crew')} · ${timeText(f.recorded_at)}</div>`:''}</button>`}).join('')}</div></article>`).join('');hb.innerHTML=lateAny?'<div class="alert">THE CHILDREN HUNGER. THIS IS NOT A DRILL.</div>':'';qa('.bowl').forEach(b=>b.onclick=()=>feedModal(b.dataset.cat,b.dataset.sch,b.dataset.time))}catch(e){box.innerHTML=`<div class="error">FELINE SCANNER MALFUNCTION: ${E(e.message)}</div>`}}
@@ -66,12 +67,11 @@ async function ensureShoppingLists(){
 async function more(){
   app.innerHTML=`<main class="shell">${top('More')}<h1 class="pageTitle">Systems</h1><div class="moreGrid">
     <section id="openShopping" class="panel moduleCard"><div class="section-title">Cargo</div><h2>Shopping</h2><p class="muted">Needs, wants, photos, lists, shops and live additions.</p></section>
-    <section id="openNotes" class="panel moduleCard"><div class="section-title">Comms</div><h2>Notes & Doodles</h2><p class="muted">Sticky notes, For You transmissions, doodles and Making loveNOTES.</p></section>
-<section class="panel moduleCard"><div class="section-title">Cold Storage</div><h2>Freezer</h2><p class="muted">Coming next.</p></section>
+    <section class="panel moduleCard"><div class="section-title">Cold Storage</div><h2>Freezer</h2><p class="muted">Coming next.</p></section>
     <section id="openTreasury" class="panel moduleCard"><div class="section-title">Treasury</div><h2>Bills & Debt</h2><p class="muted">Upcoming tribute, disappearing debt, and a suspicious portal.</p></section>
     <section class="panel moduleCard"><div class="section-title">Sickbay</div><h2>Take Your Drugs</h2><p class="muted">Suspiciously simple by design.</p></section>
   </div></main>${nav()}`
-  wire();q('#openShopping').onclick=()=>{active='shopping';render()};q('#openTreasury').onclick=()=>{active='treasury';render()};q('#openNotes').onclick=()=>{active='notes';render()}
+  wire();q('#openShopping').onclick=()=>{active='shopping';render()};q('#openTreasury').onclick=()=>{active='treasury';render()}
 }
 async function shopping(){
   await ensureShoppingLists()
@@ -201,6 +201,10 @@ function contrastText(hex){
 }
 async function signedNoteMedia(path){
   if(!path)return null
+  try{
+    const {data,error}=await supabase.storage.from('note-media').download(path)
+    if(!error&&data)return URL.createObjectURL(data)
+  }catch(e){console.warn('Direct note media download failed',e)}
   const {data,error}=await supabase.storage.from('note-media').createSignedUrl(path,3600)
   if(error){console.error(error);return null}
   return data?.signedUrl||null
@@ -253,11 +257,67 @@ async function bridgeNotes(){
   try{
     const {data,error}=await supabase.from('notes').select('*').eq('household_id',household.id).is('deleted_at',null).is('dismissed_at',null).eq('pinned',true).order('created_at',{ascending:false})
     if(error)throw error
-    const mine=(data||[]).filter(n=>!n.recipient_user_id||n.recipient_user_id===session.user.id||n.author_user_id===session.user.id)
-    box.innerHTML=mine.length?mine.slice(0,5).map(n=>`<div class="bridgeMiniNote"><b>${n.note_type==='for_you'&&n.recipient_user_id===session.user.id&&!n.opened_at?'SEALED TRANSMISSION':E((n.body||((n.doodle_path||n.photo_path)?'Visual transmission':'Note')).slice(0,90))}</b><div class="muted">from ${E(n.author_name_snapshot)}${n.doodle_path?' · doodle':''}${n.photo_path?' · photo':''}</div></div>`).join('')+(mine.length>5?`<button id="moreBridgeNotes" class="ghost">+${mine.length-5} MORE NOTES</button>`:''):'<span class="muted">Empy :(</span>'
+    let mine=(data||[]).filter(n=>!n.recipient_user_id||n.recipient_user_id===session.user.id||n.author_user_id===session.user.id)
+    mine=await enrichNoteMedia(mine)
+    box.innerHTML=mine.length?`<div class="bridgeStickyGrid">${mine.slice(0,5).map(bridgeNoteCard).join('')}</div>${mine.length>5?`<button id="moreBridgeNotes" class="ghost notesMore">+${mine.length-5} MORE NOTES</button>`:''}`:'<span class="muted">Empy :(</span>'
+    wireBridgeNoteCards(mine)
     if(q('#moreBridgeNotes'))q('#moreBridgeNotes').onclick=()=>{active='notes';render()}
   }catch(e){box.textContent='Comms are making a suspicious noise.'}
 }
+function bridgeNoteCard(n){
+  const sealed=n.note_type==='for_you'&&n.recipient_user_id===session.user.id&&!n.opened_at
+  const txt=contrastText(n.color)
+  if(sealed)return `<article class="bridgePaper bridgeEnvelope" tabindex="0" data-bnote="${n.id}" data-open="${n.id}" style="--paper:${n.color};--paperText:${txt}"><div class="envelopeFlap"></div><div class="envelopeSeal">♥</div><b>${E(pick(sealedLines)(n.author_name_snapshot))}</b><small>from ${E(n.author_name_snapshot)}</small></article>`
+  const media=n._doodleUrl||n._photoUrl
+  return `<article class="bridgePaper ${n.note_type==='doodle'?'bridgeDoodle':'bridgeSticky'}" tabindex="0" data-bnote="${n.id}" style="--paper:${n.color};--paperText:${txt}">
+    <div class="bridgePaperTo">${n.recipient_name_snapshot?`TO ${E(n.recipient_name_snapshot)}`:'ON THE BRIDGE'}</div>
+    ${media?`<img src="${E(media)}" alt="${n._doodleUrl?'Doodle':'Photo'} attached to note">`:''}
+    ${n.body?`<div class="bridgePaperBody">${E(n.body)}</div>`:''}
+    <div class="bridgePaperFrom">— ${E(n.author_name_snapshot)}</div>
+    <div class="bridgePaperReactions">${reactionSet.map(r=>`<button class="reactionBtn" data-react="${n.id}" data-r="${E(r)}">${E(r)}</button>`).join('')}</div>
+    <div class="bridgeNoteMenu" data-bmenu="${n.id}"></div>
+  </article>`
+}
+function wireBridgeNoteCards(ns){
+  qa('[data-bnote]').forEach(card=>{
+    const n=ns.find(x=>x.id===card.dataset.bnote)
+    if(card.dataset.open){card.onclick=()=>openForYou(card.dataset.open);return}
+    let timer=null,moved=false
+    const openDetail=()=>openNoteDetail(n)
+    const openMenu=e=>{e?.preventDefault();e?.stopPropagation();openBridgeNoteMenu(card,n)}
+    card.addEventListener('click',e=>{if(e.target.closest('button'))return;openDetail()})
+    card.addEventListener('pointerdown',()=>{moved=false;timer=setTimeout(()=>{if(!moved)openMenu()},520)})
+    card.addEventListener('pointermove',()=>{moved=true;if(timer)clearTimeout(timer)})
+    card.addEventListener('pointerup',()=>{if(timer)clearTimeout(timer)})
+    card.addEventListener('pointercancel',()=>{if(timer)clearTimeout(timer)})
+    card.addEventListener('contextmenu',openMenu)
+  })
+  qa('.bridgePaper [data-react]').forEach(b=>b.onclick=e=>{e.stopPropagation();reactNote(b.dataset.react,b.dataset.r,ns.find(x=>x.id===b.dataset.react))})
+}
+function openBridgeNoteMenu(card,n){
+  qa('.bridgeNoteMenu.open').forEach(x=>x.classList.remove('open'))
+  const menu=card.querySelector('[data-bmenu]');if(!menu)return
+  const editable=n.author_user_id===session.user.id
+  menu.innerHTML=`${editable?`<button data-medit>EDIT</button>`:''}<button data-mpin>${n.pinned?'UNPIN':'PIN THIS BABY'}</button>${n.recipient_user_id===session.user.id?'<button data-mdismiss>TRANSMISSION RECEIVED</button>':''}<button data-mhoard>HOARD THIS</button>${n.needs_action&&!n.action_completed_at?'<button data-mquest>QUEST COMPLETED</button>':''}<button data-mlog>ADD TO CAPTAIN'S LOG</button>${editable?'<button data-mdestroy>DESTROY</button>':''}`
+  menu.classList.add('open')
+  if(menu.querySelector('[data-medit]'))menu.querySelector('[data-medit]').onclick=()=>noteModal(null,n.id)
+  menu.querySelector('[data-mpin]').onclick=async()=>{await supabase.from('notes').update({pinned:!n.pinned,updated_at:new Date().toISOString()}).eq('id',n.id);bridgeNotes()}
+  if(menu.querySelector('[data-mdismiss]'))menu.querySelector('[data-mdismiss]').onclick=async()=>{await supabase.from('notes').update({dismissed_at:new Date().toISOString(),pinned:false}).eq('id',n.id);bridgeNotes()}
+  menu.querySelector('[data-mhoard]').onclick=async()=>{await supabase.from('notes').update({hoarded_at:new Date().toISOString(),pinned:false}).eq('id',n.id);toast('Added to Making loveNOTES <3');bridgeNotes()}
+  if(menu.querySelector('[data-mquest]'))menu.querySelector('[data-mquest]').onclick=async()=>{await supabase.from('notes').update({action_completed_at:new Date().toISOString(),action_completed_by:session.user.id}).eq('id',n.id);toast('QUEST COMPLETED');bridgeNotes()}
+  menu.querySelector('[data-mlog]').onclick=()=>saveNoteToLog(n.id)
+  if(menu.querySelector('[data-mdestroy]'))menu.querySelector('[data-mdestroy]').onclick=()=>softDeleteNote(n.id)
+}
+async function openNoteDetail(n){
+  if(!n)return
+  const w=document.createElement('div');w.className='modalWrap noteDetailWrap'
+  const txt=contrastText(n.color),media=n._doodleUrl||n._photoUrl
+  w.innerHTML=`<section class="panel modal noteDetail" style="--paper:${n.color};--paperText:${txt}"><button class="detailClose" aria-label="Close">×</button><div class="noteTo">${n.recipient_name_snapshot?`TO ${E(n.recipient_name_snapshot)}`:'ON THE BRIDGE'}</div>${media?`<img class="noteMedia" src="${E(media)}" alt="${n._doodleUrl?'Doodle':'Photo'} attached to note">`:''}<div class="noteBody">${E(n.body||'')}</div><div class="noteMeta">from ${E(n.author_name_snapshot)} · ${dateText(n.created_at)} ${timeText(n.created_at)}</div><div class="reactionStrip">${reactionSet.map(r=>`<button class="reactionBtn" data-detailreact data-r="${E(r)}">${E(r)}</button>`).join('')}</div><button id="detailOptions" class="ghost">OPTIONS</button><div id="detailMenu" class="bridgeNoteMenu" data-bmenu="${n.id}"></div></section>`
+  document.body.appendChild(w);w.querySelector('.detailClose').onclick=()=>w.remove()
+  w.querySelectorAll('[data-detailreact]').forEach(b=>b.onclick=()=>reactNote(n.id,b.dataset.r,n))
+  w.querySelector('#detailOptions').onclick=()=>openBridgeNoteMenu(w.querySelector('.noteDetail'),n)
+}
+
 let notesTab=localStorage.getItem('bridge_notes_tab')||'active'
 async function notes(){
   app.innerHTML=`<main class="shell">${top('Notes')}<div class="agendaToolbar"><div><h1 class="pageTitle">Notes & Doodles</h1><div class="muted">Household communications of varying strategic importance.</div></div><div><button id="newSticky" class="primary">STICKY</button> <button id="newForYou" class="ghost">FOR YOU</button> <button id="newDoodle" class="ghost">DOODLE</button></div></div>
