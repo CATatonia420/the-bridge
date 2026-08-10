@@ -1,113 +1,22 @@
-import './styles.css'
-import { supabase, configured } from './supabase'
-
-const app = document.querySelector('#app')
-let session=null, household=null, profile=null, activeTab='bridge', realtimeChannel=null
-const esc=(s='')=>String(s).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))
-
-const nav=()=>`<nav class="nav">${['bridge','agenda','crew','log','more'].map(x=>`<button data-tab="${x}" class="${activeTab===x?'active':''}">${x.toUpperCase()}</button>`).join('')}</nav>`
-const top=(title='The Bridge')=>`<header class="top"><div><div class="brand">${esc(title)}</div><div class="sub">${esc(household?.name||'')}</div></div><button id="logout" class="ghost">Log out</button></header>`
-
-function wire(){
-  document.querySelector('#logout')?.addEventListener('click',()=>supabase.auth.signOut())
-  document.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>{activeTab=b.dataset.tab;renderCurrent()})
-}
-
-function renderAuth(msg=''){
-  app.innerHTML=`<main class="shell"><section class="panel auth"><div class="brand">The Bridge</div><h1>Permission to come aboard?</h1><p class="muted">Two humans. Two cats. One increasingly over-engineered household.</p>
-  <div class="tabs"><button id="loginTab" class="active">Log in</button><button id="signupTab">Sign up</button></div>
-  <form id="authForm"><div class="field"><label>Email</label><input id="email" type="email" required></div><div class="field"><label>Password</label><input id="password" type="password" minlength="6" required></div><button class="primary">ENTER THE BRIDGE</button><p id="authMsg" class="error">${esc(msg)}</p></form></section></main>`
-  let mode='login'
-  loginTab.onclick=()=>{mode='login';loginTab.classList.add('active');signupTab.classList.remove('active')}
-  signupTab.onclick=()=>{mode='signup';signupTab.classList.add('active');loginTab.classList.remove('active')}
-  authForm.onsubmit=async e=>{
-    e.preventDefault()
-    const email=document.querySelector('#email').value,password=document.querySelector('#password').value
-    const r=mode==='signup'?await supabase.auth.signUp({email,password}):await supabase.auth.signInWithPassword({email,password})
-    if(r.error) authMsg.textContent=r.error.message
-  }
-}
-
-async function loadUserData(){
-  const uid=session.user.id
-  const {data:p}=await supabase.from('profiles').select('*').eq('user_id',uid).maybeSingle(); profile=p
-  const {data:m}=await supabase.from('household_members').select('household_id').eq('user_id',uid).limit(1).maybeSingle()
-  if(m){const {data:h}=await supabase.from('households').select('*').eq('id',m.household_id).single();household=h}else household=null
-}
-
-function renderOnboarding(){
-  app.innerHTML=`<main class="shell"><section class="panel setup"><div class="brand">Crew Registration</div><h1>${profile?'Join your ship':'Create your profile'}</h1>
-  ${!profile?`<form id="profileForm"><div class="field"><label>Name</label><input id="display" required></div><div class="field"><label>Nickname (optional)</label><input id="nick"></div><button class="primary">SAVE PROFILE</button></form>`
-  :`<p>Welcome, <b>${esc(profile.display_name||'crew member')}</b>.</p><div class="tabs"><button id="createBtn" class="primary">Create household</button><button id="joinBtn" class="ghost">Join with code</button></div><div id="joinArea"></div>`}
-  <p id="msg" class="error"></p></section></main>`
-  if(!profile){
-    profileForm.onsubmit=async e=>{e.preventDefault();const {error}=await supabase.from('profiles').insert({user_id:session.user.id,display_name:display.value,nickname:nick.value});if(error)return msg.textContent=error.message;await loadUserData();renderOnboarding()}
-  }else{
-    createBtn.onclick=async()=>{const {error}=await supabase.rpc('create_household',{household_name:'The Bridge'});if(error)return msg.textContent=error.message;await loadUserData();await seedCats();subscribeRealtime();activeTab='crew';renderCurrent()}
-    joinBtn.onclick=()=>{joinArea.innerHTML=`<form id="joinForm"><div class="field"><label>Invite code</label><input id="code" required></div><button class="primary">COME ABOARD</button></form>`;joinForm.onsubmit=async e=>{e.preventDefault();const {error}=await supabase.rpc('join_household',{code:code.value});if(error)return msg.textContent=error.message;await loadUserData();subscribeRealtime();activeTab='crew';renderCurrent()}}
-  }
-}
-
-async function seedCats(){
-  const {data}=await supabase.from('cats').select('id').eq('household_id',household.id).limit(1);if(data?.length)return
-  const {data:cats}=await supabase.from('cats').insert([
-    {household_id:household.id,name:'Pukha',breed:'British Longhair',job_title:'Senior Household Supervisor'},
-    {household_id:household.id,name:'Pluto',breed:'Domestic shorthair',job_title:'Head of Ruling From High Places'}
-  ]).select()
-  for(const cat of cats||[]) await supabase.from('cat_feeding_schedules').insert(['05:00','13:00','21:00'].map(t=>({cat_id:cat.id,feeding_time:t})))
-}
-
-async function renderBridge(){
-  const name=esc(profile?.display_name||'Crew Member')
-  app.innerHTML=`<main class="shell">${top()}<div class="grid">
-  <section class="panel hero"><div><span class="muted">GOOD AFTERNOON,</span><h1>${name}.</h1><div>Why did the photon check a suitcase?<br><span class="muted">It was travelling light.</span></div></div><div class="profileDot">${name[0]||'?'}</div></section>
-  <section class="panel card cats"><div class="section-title">The children</div><div id="cats" class="catrow">Scanning for cats…</div></section>
-  <section class="panel card notes"><div class="section-title">Sticky notes</div><div class="sticky">There is cake in the fridge.<br><br>This is not a drill.</div></section>
-  <section class="panel card agenda"><div class="section-title">Today</div><div class="list"><div class="row"><span>13:00 Feed the babies</span><span>○</span></div><div class="row"><span>21:00 TAKE YOUR DRUGS</span><span class="danger">!</span></div></div></section>
-  <section class="panel card ops"><div class="section-title">House status</div><div class="list"><div class="row"><span>Laundry</span><span class="muted">Needs doing</span></div><div class="row"><span>Litter</span><span class="ok">Done</span></div></div></section>
-  </div></main><button id="plus" class="plus">+</button><section id="addMenu" class="panel menu" hidden><button>NOTE</button><button>TASK</button><button>PLAN</button><button>STUFF</button><button>MONEY</button></section>${nav()}`
-  wire(); plus.onclick=()=>addMenu.hidden=!addMenu.hidden; loadCats()
-}
-
-async function loadCats(){
-  const {data:cats}=await supabase.from('cats').select('*').eq('household_id',household.id).order('name')
-  if(!cats?.length){document.querySelector('#cats').innerHTML='No feline officers found.';return}
-  document.querySelector('#cats').innerHTML=cats.map(c=>`<article class="cat"><div class="catname">${esc(c.name)}</div><div class="muted">${esc(c.breed||'')}</div><div>${esc(c.job_title||'')}</div><div class="bowls">${['05:00','13:00','21:00'].map(t=>`<button class="bowl">${t}<br>○</button>`).join('')}</div></article>`).join('')
-}
-
-async function renderCrew(){
-  app.innerHTML=`<main class="shell">${top('Crew')}<section class="panel invite"><div class="section-title">Household invite code</div><p class="muted">Joe signs up on his own device, then chooses <b>Join with code</b>.</p><div class="copyline"><div class="code">${esc(household.invite_code)}</div><button id="copyCode" class="primary">COPY CODE</button></div><p id="copyMsg" class="muted"></p></section><h1 class="pageTitle">Crew Manifest</h1><div id="crewGrid" class="crewgrid">Calling all idiots to the bridge…</div></main>${nav()}`
-  wire();copyCode.onclick=async()=>{await navigator.clipboard.writeText(household.invite_code);copyMsg.textContent='Copied. Try not to transmit it to the Borg.'};await loadCrew()
-}
-
-async function loadCrew(){
-  const {data:members}=await supabase.from('household_members').select('user_id').eq('household_id',household.id)
-  const ids=(members||[]).map(m=>m.user_id)
-  let humans=[]; if(ids.length){const {data}=await supabase.from('profiles').select('*').in('user_id',ids);humans=data||[]}
-  const {data:cats}=await supabase.from('cats').select('*').eq('household_id',household.id).order('name')
-  crewGrid.innerHTML=[
-    ...humans.map(p=>`<article class="panel crewcard"><div class="crewhead"><div class="avatar">${esc((p.display_name||'?')[0])}</div><div><div class="crewname">${esc(p.display_name||'Crew member')}</div><div class="muted">${esc(p.nickname||'Human')}</div><span class="badge">Human crew</span></div></div></article>`),
-    ...(cats||[]).map(c=>`<article class="panel crewcard"><div class="crewhead"><div class="avatar">CAT</div><div><div class="crewname">${esc(c.name)}</div><div class="muted">${esc(c.breed||'Cat')}</div><span class="badge">${esc(c.job_title||'Feline officer')}</span></div></div></article>`)
-  ].join('')
-}
-
-function renderPlaceholder(title,line){app.innerHTML=`<main class="shell">${top(title)}<section class="panel card"><h1 class="pageTitle">${esc(title)}</h1><p>${esc(line)}</p><p class="muted">This module is coming in the next builds.</p></section></main>${nav()}`;wire()}
-function renderCurrent(){if(activeTab==='bridge')return renderBridge();if(activeTab==='crew')return renderCrew();if(activeTab==='agenda')return renderPlaceholder('Agenda','Temporal nonsense will live here.');if(activeTab==='log')return renderPlaceholder("Captain's Log",'Funny shit, memories, photos and doodles.');return renderPlaceholder('More','Bills, boss battles, freezer, drugs, house ops and settings.')}
-
-function subscribeRealtime(){
-  if(!household)return
-  if(realtimeChannel)supabase.removeChannel(realtimeChannel)
-  realtimeChannel=supabase.channel(`household-${household.id}`)
-   .on('postgres_changes',{event:'*',schema:'public',table:'household_members',filter:`household_id=eq.${household.id}`},()=>{if(activeTab==='crew')loadCrew()})
-   .on('postgres_changes',{event:'*',schema:'public',table:'profiles'},()=>{if(activeTab==='crew')loadCrew()})
-   .on('postgres_changes',{event:'*',schema:'public',table:'cats',filter:`household_id=eq.${household.id}`},()=>{if(activeTab==='crew')loadCrew();if(activeTab==='bridge')loadCats()})
-   .subscribe()
-}
-
-async function boot(){
-  if(!configured)return renderAuth()
-  const {data:{session:s}}=await supabase.auth.getSession();session=s
-  if(session){await loadUserData();if(household){subscribeRealtime();renderCurrent()}else renderOnboarding()}else renderAuth()
-  supabase.auth.onAuthStateChange(async(_e,newSession)=>{session=newSession;if(!session){if(realtimeChannel)supabase.removeChannel(realtimeChannel);profile=null;household=null;return renderAuth()}await loadUserData();if(household){subscribeRealtime();renderCurrent()}else renderOnboarding()})
-}
-boot()
+import './styles.css'; import {supabase,configured} from './supabase'
+const app=document.querySelector('#app');let session,household,profile,active='bridge',channel
+const E=s=>String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))
+const nav=()=>`<nav class="nav">${['bridge','agenda','crew','log','more'].map(x=>`<button data-tab="${x}" class="${active===x?'active':''}">${x.toUpperCase()}</button>`).join('')}</nav>`
+const top=t=>`<header class="top"><div><div class="brand">${E(t||'The Bridge')}</div><div class="muted">${E(household?.name||'')}</div></div><button id="logout" class="ghost">Log out</button></header>`
+function wire(){logout?.addEventListener('click',()=>supabase.auth.signOut());document.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>{active=b.dataset.tab;render()})}
+async function userData(){let u=session.user.id;profile=(await supabase.from('profiles').select('*').eq('user_id',u).maybeSingle()).data;let m=(await supabase.from('household_members').select('household_id').eq('user_id',u).limit(1).maybeSingle()).data;household=m?(await supabase.from('households').select('*').eq('id',m.household_id).single()).data:null}
+function auth(){app.innerHTML=`<main class="shell"><section class="panel auth"><div class="brand">The Bridge</div><h1>Permission to come aboard?</h1><div class="tabs"><button id="li" class="active">Log in</button><button id="su">Sign up</button></div><form id="af"><div class="field"><label>Email</label><input id="em" type="email" required></div><div class="field"><label>Password</label><input id="pw" type="password" minlength="6" required></div><button class="primary">ENTER THE BRIDGE</button><p id="err" class="error"></p></form></section></main>`;let mode='login';li.onclick=()=>{mode='login';li.className='active';su.className=''};su.onclick=()=>{mode='signup';su.className='active';li.className=''};af.onsubmit=async e=>{e.preventDefault();let r=mode==='signup'?await supabase.auth.signUp({email:em.value,password:pw.value}):await supabase.auth.signInWithPassword({email:em.value,password:pw.value});if(r.error)err.textContent=r.error.message}}
+function onboard(){app.innerHTML=`<main class="shell"><section class="panel setup"><div class="brand">Crew Registration</div>${!profile?`<h1>Create your profile</h1><form id="pf"><div class="field"><label>Name</label><input id="dn" required></div><div class="field"><label>Nickname</label><input id="nn"></div><button class="primary">SAVE PROFILE</button></form>`:`<h1>Join your ship</h1><div class="tabs"><button id="create" class="primary">Create household</button><button id="join">Join with code</button></div><div id="ja"></div>`}<p id="msg" class="error"></p></section></main>`;if(!profile)pf.onsubmit=async e=>{e.preventDefault();let r=await supabase.from('profiles').insert({user_id:session.user.id,display_name:dn.value,nickname:nn.value});if(r.error)return msg.textContent=r.error.message;await userData();onboard()};else{create.onclick=async()=>{let r=await supabase.rpc('create_household',{household_name:'The Bridge'});if(r.error)return msg.textContent=r.error.message;await userData();await seed();sub();active='crew';render()};join.onclick=()=>{ja.innerHTML=`<form id="jf"><div class="field"><label>Invite code</label><input id="ic" required></div><button class="primary">COME ABOARD</button></form>`;jf.onsubmit=async e=>{e.preventDefault();let r=await supabase.rpc('join_household',{code:ic.value});if(r.error)return msg.textContent=r.error.message;await userData();sub();active='crew';render()}}}}
+async function seed(){let old=(await supabase.from('cats').select('id').eq('household_id',household.id).limit(1)).data;if(old?.length)return;let cats=(await supabase.from('cats').insert([{household_id:household.id,name:'Pukha',breed:'British Longhair',job_title:'Senior Household Supervisor'},{household_id:household.id,name:'Pluto',breed:'Domestic shorthair',job_title:'Head of Ruling From High Places'}]).select()).data;for(let c of cats||[])await supabase.from('cat_feeding_schedules').insert(['05:00','13:00','21:00'].map(t=>({cat_id:c.id,feeding_time:t})))}
+function localDate(){return new Intl.DateTimeFormat('en-CA',{timeZone:'Europe/Dublin',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date())}
+function minsNow(){let p=new Intl.DateTimeFormat('en-GB',{timeZone:'Europe/Dublin',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).format(new Date()).split(':');return +p[0]*60 + +p[1]}
+function tmins(t){let [h,m]=t.split(':');return +h*60 + +m}
+async function bridge(){app.innerHTML=`<main class="shell">${top()}<div id="hunger"></div><div class="grid"><section class="panel hero"><span class="muted">CURRENTLY ABOARD:</span><h1>${E(profile?.display_name)}</h1><div>Why don't starships ever get lost?<br><span class="muted">They always follow their enterprise.</span></div></section><section class="panel card cats"><div class="section-title">The children</div><div id="cats" class="catrow">Scanning…</div></section><section class="panel card notes"><div class="section-title">Sticky notes</div><div class="sticky">There is cake in the fridge.<br><br>This is not a drill.</div></section><section class="panel card agenda"><div class="section-title">Today</div><div class="row"><span>TAKE YOUR DRUGS</span><span>!</span></div></section><section class="panel card ops"><div class="section-title">House status</div><div class="muted">No disasters currently detected. Suspicious.</div></section></div></main><button id="plus" class="plus">+</button><section id="menu" class="panel menu" hidden><button>NOTE</button><button>TASK</button><button>PLAN</button><button>STUFF</button><button>MONEY</button></section>${nav()}`;wire();plus.onclick=()=>menu.hidden=!menu.hidden;await cats()}
+async function cats(){let cs=(await supabase.from('cats').select('*,cat_feeding_schedules(*)').eq('household_id',household.id).order('name')).data||[];let fs=(await supabase.from('cat_feedings').select('*').eq('household_id',household.id).eq('feeding_date',localDate()).order('recorded_at',{ascending:false})).data||[];let users=[...new Set(fs.map(x=>x.recorded_by))],names={};if(users.length){for(let p of (await supabase.from('profiles').select('user_id,display_name').in('user_id',users)).data||[])names[p.user_id]=p.display_name}
+let overdue=false;cats.innerHTML=cs.map(c=>{let schedules=(c.cat_feeding_schedules||[]).sort((a,b)=>a.feeding_time.localeCompare(b.feeding_time));return `<article class="cat"><div class="catname">${E(c.name)}</div><div class="muted">${E(c.breed)}</div><div class="bowls">${schedules.map(s=>{let f=fs.find(x=>x.cat_id===c.id&&x.schedule_id===s.id),late=!f&&minsNow()>tmins(s.feeding_time)+60;if(late)overdue=true;let cl=f?f.status:late?'overdue':'',txt=f?f.status.toUpperCase():late?'HUNGRY':'○',stamp=f?`<div class="stamp">${E(names[f.recorded_by]||'Crew')} · ${new Date(f.recorded_at).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</div>`:'';return `<button class="bowl ${cl}" data-cat="${c.id}" data-sch="${s.id}" data-time="${s.feeding_time.slice(0,5)}">${s.feeding_time.slice(0,5)}<br>${txt}${stamp}</button>`}).join('')}</div></article>`}).join('');hunger.innerHTML=overdue?`<div class="alert">THE CHILDREN HUNGER. THIS IS NOT A DRILL.</div>`:'';document.querySelectorAll('.bowl').forEach(b=>b.onclick=()=>feedModal(b.dataset.cat,b.dataset.sch,b.dataset.time))}
+function feedModal(cat,sch,time){let wrap=document.createElement('div');wrap.className='modalWrap';wrap.innerHTML=`<section class="panel modal"><div class="section-title">Feeding report · ${E(time)}</div><p>What happened?</p><div class="statusBtns"><button data-s="fed">FED</button><button data-s="partial">PARTIAL</button><button data-s="refused">REFUSED</button><button data-s="other">OTHER</button></div><div class="field"><label>Optional note</label><textarea id="fn"></textarea></div><button id="cancel" class="ghost">Cancel</button><p id="fe" class="error"></p></section>`;document.body.appendChild(wrap);cancel.onclick=()=>wrap.remove();wrap.querySelectorAll('[data-s]').forEach(b=>b.onclick=async()=>{let r=await supabase.from('cat_feedings').insert({household_id:household.id,cat_id:cat,schedule_id:sch,feeding_date:localDate(),status:b.dataset.s,note:fn.value||null,recorded_by:session.user.id});if(r.error)return fe.textContent=r.error.message;wrap.remove();cats()})}
+async function crew(){app.innerHTML=`<main class="shell">${top('Crew')}<section class="panel invite"><div class="section-title">Household invite code</div><div class="code">${E(household.invite_code)}</div></section><h1 class="pageTitle">Crew Manifest</h1><div id="cg" class="crewgrid"></div></main>${nav()}`;wire();let ms=(await supabase.from('household_members').select('user_id').eq('household_id',household.id)).data||[],ids=ms.map(x=>x.user_id),ps=ids.length?(await supabase.from('profiles').select('*').in('user_id',ids)).data||[]:[],cs=(await supabase.from('cats').select('*').eq('household_id',household.id)).data||[];cg.innerHTML=[...ps.map(p=>`<article class="panel crewcard"><div class="crewhead"><div class="avatar">${E((p.display_name||'?')[0])}</div><div><div class="crewname">${E(p.display_name)}</div><div class="muted">${E(p.nickname||'Human')}</div></div></div></article>`),...cs.map(c=>`<article class="panel crewcard"><div class="crewname">${E(c.name)}</div><div class="muted">${E(c.breed)}</div></article>`)].join('')}
+function placeholder(t){app.innerHTML=`<main class="shell">${top(t)}<section class="panel card"><h1 class="pageTitle">${E(t)}</h1><p class="muted">Coming soon.</p></section></main>${nav()}`;wire()}
+function render(){if(active==='bridge')bridge();else if(active==='crew')crew();else placeholder(active==='log'?"Captain's Log":active[0].toUpperCase()+active.slice(1))}
+function sub(){if(channel)supabase.removeChannel(channel);channel=supabase.channel('bridge-live-'+household.id).on('postgres_changes',{event:'*',schema:'public',table:'cat_feedings',filter:`household_id=eq.${household.id}`},()=>{if(active==='bridge')cats()}).on('postgres_changes',{event:'*',schema:'public',table:'household_members',filter:`household_id=eq.${household.id}`},()=>{if(active==='crew')crew()}).subscribe()}
+async function boot(){if(!configured)return auth();session=(await supabase.auth.getSession()).data.session;if(session){await userData();household?(sub(),render()):onboard()}else auth();supabase.auth.onAuthStateChange(async(_,s)=>{session=s;if(!s){profile=household=null;return auth()}await userData();household?(sub(),render()):onboard()})}boot()
