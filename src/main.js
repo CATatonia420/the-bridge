@@ -5,7 +5,7 @@ const app=document.querySelector('#app')
 let session=null,household=null,profile=null,active='bridge',agendaView='today',channel=null
 const E=s=>String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))
 const q=s=>document.querySelector(s),qa=s=>[...document.querySelectorAll(s)]
-const nav=()=>`<nav class="nav">${['bridge','agenda','crew','log','more'].map(x=>`<button data-tab="${x}" class="${(active===x||(active==='shopping'&&x==='more'))?'active':''}">${x.toUpperCase()}</button>`).join('')}</nav>`
+const nav=()=>`<nav class="nav">${['bridge','agenda','crew','log','more'].map(x=>`<button data-tab="${x}" class="${(active===x||(['shopping','treasury','trophy'].includes(active)&&x==='more'))?'active':''}">${x.toUpperCase()}</button>`).join('')}</nav>`
 const top=t=>`<header class="top"><div><div class="brand">${E(t||'The Bridge')}</div><div class="muted">${E(household?.name||'')}</div></div><button id="logout" class="ghost">Log out</button></header>`
 function wire(){q('#logout')?.addEventListener('click',()=>supabase.auth.signOut());qa('[data-tab]').forEach(b=>b.onclick=()=>{active=b.dataset.tab;render()})}
 async function userData(){const u=session.user.id;profile=(await supabase.from('profiles').select('*').eq('user_id',u).maybeSingle()).data;const m=(await supabase.from('household_members').select('household_id').eq('user_id',u).limit(1).maybeSingle()).data;household=m?(await supabase.from('households').select('*').eq('id',m.household_id).single()).data:null}
@@ -30,8 +30,8 @@ const timeText=x=>x?new Date(x).toLocaleTimeString('en-IE',{hour:'2-digit',minut
 function overdue(t){if(!t.due_at||t.status==='done')return'';const h=(Date.now()-new Date(t.due_at))/36e5;if(h<=0)return'';if(h<6)return'<div class="over1">Temporal hiccup detected.</div>';if(h<24)return'<div class="over2">This has become mildly embarrassing.</div>';if(h<72)return'<div class="over3">TEMPORAL ANOMALY DETECTED.</div>';return'<div class="over4">WE HAVE ABANDONED THE TIMELINE.</div>'}
 
 async function bridge(){
- app.innerHTML=`<main class="shell">${top()}<div id="hunger"></div><div class="grid"><section class="panel hero"><span class="muted">CURRENTLY ABOARD:</span><h1>${E(profile?.display_name)}</h1><div>Why don't starships ever get lost?<br><span class="muted">They always follow their enterprise.</span></div></section><section class="panel card cats"><div class="section-title">The children</div><div id="cats" class="catrow">Scanning…</div></section><section class="panel card notes"><div class="section-title">Sticky notes</div><div class="sticky">There is cake in the fridge.<br><br>This is not a drill.</div></section><section class="panel card agenda"><div class="section-title">Today</div><div id="todayTasks" class="muted">Consulting the timeline…</div></section><section class="panel card ops"><div class="section-title">House status</div><div class="muted">No disasters currently detected. Suspicious.</div></section></div></main><button id="plus" class="plus">+</button><section id="menu" class="panel menu" hidden><button>NOTE</button><button id="quickTask">TASK</button><button>PLAN</button><button id="quickStuff">STUFF</button><button>MONEY</button></section>${nav()}`
- wire();q('#plus').onclick=()=>q('#menu').hidden=!q('#menu').hidden;q('#quickTask').onclick=()=>taskModal();q('#quickStuff').onclick=()=>shoppingItemModal();await Promise.all([loadCats(),bridgeTasks()])
+ app.innerHTML=`<main class="shell">${top()}<div id="hunger"></div><div class="grid"><section class="panel hero"><span class="muted">CURRENTLY ABOARD:</span><h1>${E(profile?.display_name)}</h1><div>Why don't starships ever get lost?<br><span class="muted">They always follow their enterprise.</span></div></section><section class="panel card cats"><div class="section-title">The children</div><div id="cats" class="catrow">Scanning…</div></section><section class="panel card notes"><div class="section-title">Sticky notes</div><div class="sticky">There is cake in the fridge.<br><br>This is not a drill.</div></section><section class="panel card agenda"><div class="section-title">Today</div><div id="todayTasks" class="muted">Consulting the timeline…</div></section><section class="panel card ops"><div class="section-title">Upcoming tribute</div><div id="bridgeBills" class="muted">Sweeping financial radar…</div></section></div></main><button id="plus" class="plus">+</button><section id="menu" class="panel menu" hidden><button>NOTE</button><button id="quickTask">TASK</button><button>PLAN</button><button id="quickStuff">STUFF</button><button id="quickMoney">MONEY</button></section>${nav()}`
+ wire();q('#plus').onclick=()=>q('#menu').hidden=!q('#menu').hidden;q('#quickTask').onclick=()=>taskModal();q('#quickStuff').onclick=()=>shoppingItemModal();q('#quickMoney').onclick=()=>{active='treasury';render()};await Promise.all([loadCats(),bridgeTasks(),bridgeBills()])
 }
 async function bridgeTasks(){const box=q('#todayTasks');if(!box)return;const today=dateKey(new Date()),{data}=await supabase.from('tasks').select('*').eq('household_id',household.id).eq('status','needs_doing').order('due_at');const list=(data||[]).filter(t=>t.due_at&&dateKey(t.due_at)===today);box.innerHTML=list.length?list.slice(0,5).map(t=>`<div class="row"><span>${E(t.title)}</span><span>${t.all_day?'TODAY':timeText(t.due_at)}</span></div>`).join(''):'No disasters currently detected. Probably.'}
 async function loadCats(){const box=q('#cats'),hb=q('#hunger');if(!box)return;try{const cr=await supabase.from('cats').select('*,cat_feeding_schedules(*)').eq('household_id',household.id).order('name');if(cr.error)throw cr.error;const fr=await supabase.from('cat_feedings').select('*').eq('household_id',household.id).eq('feeding_date',dateKey(new Date())).order('recorded_at',{ascending:false});if(fr.error)throw fr.error;const fs=fr.data||[],users=[...new Set(fs.map(x=>x.recorded_by))],names={};if(users.length){for(const p of (await supabase.from('profiles').select('user_id,display_name').in('user_id',users)).data||[])names[p.user_id]=p.display_name}const now=new Date(),mins=now.getHours()*60+now.getMinutes();let lateAny=false;box.innerHTML=(cr.data||[]).map(c=>`<article class="cat"><div class="catname">${E(c.name)}</div><div class="muted">${E(c.breed)}</div><div class="bowls">${(c.cat_feeding_schedules||[]).sort((a,b)=>a.feeding_time.localeCompare(b.feeding_time)).map(s=>{const f=fs.find(x=>x.cat_id===c.id&&x.schedule_id===s.id),[h,m]=s.feeding_time.split(':').map(Number),late=!f&&mins>h*60+m+60;if(late)lateAny=true;return`<button class="bowl ${f?f.status:late?'overdue':''}" data-cat="${c.id}" data-sch="${s.id}" data-time="${s.feeding_time.slice(0,5)}">${s.feeding_time.slice(0,5)}<br>${f?f.status.toUpperCase():late?'HUNGRY':'○'}${f?`<div class="stamp">${E(names[f.recorded_by]||'Crew')} · ${timeText(f.recorded_at)}</div>`:''}</button>`}).join('')}</div></article>`).join('');hb.innerHTML=lateAny?'<div class="alert">THE CHILDREN HUNGER. THIS IS NOT A DRILL.</div>':'';qa('.bowl').forEach(b=>b.onclick=()=>feedModal(b.dataset.cat,b.dataset.sch,b.dataset.time))}catch(e){box.innerHTML=`<div class="error">FELINE SCANNER MALFUNCTION: ${E(e.message)}</div>`}}
@@ -41,8 +41,8 @@ async function crew(){app.innerHTML=`<main class="shell">${top('Crew')}<section 
 
 async function agenda(){
  await ensureCategories()
- app.innerHTML=`<main class="shell">${top('Agenda')}<div class="agendaToolbar"><div><h1 class="pageTitle">Temporal Operations</h1><div class="muted">Try not to damage the timeline.</div></div><div><button id="newTask" class="primary">NEW TASK</button> <button id="categories" class="ghost">CATEGORIES</button></div></div><div class="viewSwitch"><button data-view="today" class="${agendaView==='today'?'active':''}">TODAY</button><button data-view="week" class="${agendaView==='week'?'active':''}">THIS WEEK</button><button data-view="month" class="${agendaView==='month'?'active':''}">MONTH</button></div><section id="stage" class="panel card">Consulting the timeline…</section></main>${nav()}`
- wire();q('#newTask').onclick=()=>taskModal();q('#categories').onclick=()=>categoryModal();qa('[data-view]').forEach(b=>b.onclick=()=>{agendaView=b.dataset.view;agenda()});addSwipe(q('#stage'));await drawAgenda()
+ app.innerHTML=`<main class="shell">${top('Agenda')}<div class="agendaToolbar"><div><h1 class="pageTitle">Temporal Operations</h1><div class="muted">Try not to damage the timeline.</div></div><div><button id="newTask" class="primary">NEW TASK</button> <button id="categories" class="ghost">CATEGORIES</button></div></div><div class="viewSwitch"><button data-view="today" class="${agendaView==='today'?'active':''}">TODAY</button><button data-view="week" class="${agendaView==='week'?'active':''}">THIS WEEK</button><button data-view="month" class="${agendaView==='month'?'active':''}">MONTH</button></div><section id="agendaBills" class="panel card" style="margin-bottom:12px"><div class="muted">Financial radar sweeping…</div></section><section id="stage" class="panel card">Consulting the timeline…</section></main>${nav()}`
+ wire();q('#newTask').onclick=()=>taskModal();q('#categories').onclick=()=>categoryModal();qa('[data-view]').forEach(b=>b.onclick=()=>{agendaView=b.dataset.view;agenda()});addSwipe(q('#stage'));await Promise.all([drawAgenda(),drawAgendaBills()])
 }
 function addSwipe(el){let x=null;el.addEventListener('touchstart',e=>x=e.touches[0].clientX,{passive:true});el.addEventListener('touchend',e=>{if(x===null)return;const dx=e.changedTouches[0].clientX-x;x=null;if(Math.abs(dx)<60)return;const v=['today','week','month'];let i=v.indexOf(agendaView)+(dx<0?1:-1);i=Math.max(0,Math.min(2,i));if(v[i]!==agendaView){agendaView=v[i];agenda()}},{passive:true})}
 async function agendaData(){const [tr,cr,mr]=await Promise.all([supabase.from('tasks').select('*,task_subtasks(*)').eq('household_id',household.id).order('due_at',{ascending:true,nullsFirst:false}),supabase.from('task_categories').select('*').eq('household_id',household.id).order('sort_order'),supabase.from('household_members').select('user_id').eq('household_id',household.id)]);if(tr.error)throw tr.error;const ids=(mr.data||[]).map(x=>x.user_id),ps=ids.length?(await supabase.from('profiles').select('user_id,display_name').in('user_id',ids)).data||[]:[];return{tasks:tr.data||[],cats:cr.data||[],profiles:ps}}
@@ -67,10 +67,10 @@ async function more(){
   app.innerHTML=`<main class="shell">${top('More')}<h1 class="pageTitle">Systems</h1><div class="moreGrid">
     <section id="openShopping" class="panel moduleCard"><div class="section-title">Cargo</div><h2>Shopping</h2><p class="muted">Needs, wants, photos, lists, shops and live additions.</p></section>
     <section class="panel moduleCard"><div class="section-title">Cold Storage</div><h2>Freezer</h2><p class="muted">Coming next.</p></section>
-    <section class="panel moduleCard"><div class="section-title">Financial Hostiles</div><h2>Bills & Boss Battles</h2><p class="muted">Coming soon.</p></section>
+    <section id="openTreasury" class="panel moduleCard"><div class="section-title">Treasury</div><h2>Bills & Debt</h2><p class="muted">Upcoming tribute, disappearing debt, and a suspicious portal.</p></section>
     <section class="panel moduleCard"><div class="section-title">Sickbay</div><h2>Take Your Drugs</h2><p class="muted">Suspiciously simple by design.</p></section>
   </div></main>${nav()}`
-  wire();q('#openShopping').onclick=()=>{active='shopping';render()}
+  wire();q('#openShopping').onclick=()=>{active='shopping';render()};q('#openTreasury').onclick=()=>{active='treasury';render()}
 }
 async function shopping(){
   await ensureShoppingLists()
@@ -188,8 +188,315 @@ async function shoppingListsModal(){
   w.querySelectorAll('[data-ldel]').forEach(b=>b.onclick=async()=>{if(confirm('Delete this list? Its items will remain under no list.')){await supabase.from('shopping_lists').delete().eq('id',b.dataset.ldel);w.remove();shoppingListsModal()}})
 }
 
+
+const pick=a=>a[Math.floor(Math.random()*a.length)]
+const moneyLines={
+  alreadyPaid:[
+    'We already paid them. Don’t give them ideas.',
+    'They’ve had their money already.',
+    'STOP TRYING TO GIVE PEOPLE OUR MONEY!',
+    'Nope.',
+    'Mark has already been paid. Don’t believe his lies.'
+  ],
+  needAmount:[
+    'How much did we give the bastards?',
+    'baby girl... the amount....?',
+    'Remember numbers! all day! every day!',
+    'how about you tell me how much too?'
+  ],
+  needDate:[
+    'When did this financial crime occur?',
+    'And WHEN did we pay them?',
+    'Temporal coordinates required.',
+    'not so fast! payment date??'
+  ],
+  billTomorrow:[
+    n=>`${n} wants money tomorrow. Rude.`,
+    n=>`Incoming tomorrow: ${n}.`,
+    n=>`Psst. ${n} bill tomorrow.`,
+    n=>`ugh, they want money again: ${n} - tmrw`,
+    n=>`capitalism is haunting us... ${n} due tmrw`,
+    n=>`william is giving birth tmrw.`
+  ],
+  billToday:[
+    n=>`${n} wants its fucking money today.`,
+    n=>`PAY THE ${n.toUpperCase()} PEOPLE.`,
+    n=>`today is gonna be the day that they're gonna make us pay.`,
+    n=>`capitalism is attacking the little people again. this bill is due today`
+  ],
+  emptyBills:[
+    'Nobody wants money from us. Suspicious.',
+    'The vultures are quiet this month.',
+    'Financial scanners detect fuck all.',
+    'We gets to keep moneyz? :3',
+    'oh nooooo, we don’t owe anything....'
+  ],
+  overpay:[
+    left=>`You cannot kill it more than dead. It only has €${left.toFixed(2)} left.`,
+    left=>`Easy, tiger. It only has €${left.toFixed(2)} left.`,
+    left=>`OVERKILL DETECTED. Reduce the payment.`,
+    left=>`STOP TRYING TO GIVE PEOPLE MORE MONEY THAN THEY NEED.`,
+    left=>`we're too poor for this generosity, reduce the amount.`
+  ],
+  zeroPay:[
+    'That is, technically, fuck all.',
+    'An inspiring contribution of absolutely nothing.',
+    '0 damage. The enemy remains unimpressed.',
+    'Excellent financial strategy: do absolutely fuck all.',
+    'A bold payment of zero whole euros.'
+  ],
+  borrow:[
+    a=>`Ah fuck. It healed €${a.toFixed(2)}.`,
+    a=>`+€${a.toFixed(2)}. We appear to be going the wrong way.`,
+    a=>`Debt has regenerated €${a.toFixed(2)} HP. Bastard.`,
+    a=>`The horrible little thing ate another €${a.toFixed(2)}.`,
+    a=>`Reverse progress achieved: +€${a.toFixed(2)}.`
+  ],
+  trophyEmpty:[
+    'No corpses yet.',
+    'The trophy room awaits its first victim.',
+    'Nothing here. Get murdering.',
+    'have to earn the trophies first, buddy'
+  ],
+  errors:[
+    'Something has gone tits up.',
+    'a fucky-wucky seems to have happened',
+    'oh-oh HEP-C will hear about this....',
+    'ouch, that didn’t feel right....',
+    'WRONG HOLE'
+  ],
+  billDelete:[
+    'Delete it from the app, not unfortunately from real life?',
+    'This does not legally absolve us of the bill. I checked.',
+    'Just cuz you delete it, doesn’t mean we don’t have to pay it..',
+    'if we don’t pay they’ll come for our piss!'
+  ]
+}
+function toast(text,ms=3600){
+  q('.finToast')?.remove()
+  const d=document.createElement('div');d.className='finToast';d.textContent=text;document.body.appendChild(d)
+  setTimeout(()=>d.remove(),ms)
+}
+function moneyError(err){
+  const w=document.createElement('div');w.className='modalWrap'
+  w.innerHTML=`<section class="panel modal"><div class="section-title">${E(pick(moneyLines.errors))}</div><button id="showErr" class="ghost">SHOW BORING DETAILS</button><pre id="boringErr" hidden style="white-space:pre-wrap;color:#aaa">${E(err?.message||err)}</pre><div style="margin-top:12px"><button id="errClose" class="primary">Fine.</button></div></section>`
+  document.body.appendChild(w);w.querySelector('#showErr').onclick=()=>w.querySelector('#boringErr').hidden=!w.querySelector('#boringErr').hidden;w.querySelector('#errClose').onclick=()=>w.remove()
+}
+const eur=x=>x===null||x===undefined||x===''?'?':`€${Number(x).toFixed(2)}`
+function daysFromNow(iso){
+  const a=new Date();a.setHours(0,0,0,0);const b=new Date(iso);b.setHours(0,0,0,0);return Math.round((b-a)/86400000)
+}
+function billUrgency(b){
+  const d=daysFromNow(b.due_at)
+  if(d<0){const late=-d;if(late===1)return 'Oops, we forgot the bill.';if(late<=3)return 'they don’t want to let this go huh? the bill is due';if(late<=7)return 'Hey, the bill is due and unpaid.';return "THEY'RE GONNA TAKE OVER THE SHIP!"}
+  if(d===0){const f=pick(moneyLines.billToday);return f(b.name)}
+  if(d===1){const f=pick(moneyLines.billTomorrow);return f(b.name)}
+  return ''
+}
+function nextBillDate(b){
+  if(b.recurrence_type==='one_off')return null
+  if(b.recurrence_type==='custom')return null
+  const d=new Date(b.due_at),n=b.recurrence_interval||1
+  if(b.recurrence_type==='days')d.setDate(d.getDate()+n)
+  if(b.recurrence_type==='weeks')d.setDate(d.getDate()+7*n)
+  if(b.recurrence_type==='months')d.setMonth(d.getMonth()+n)
+  return d.toISOString()
+}
+async function bridgeBills(){
+  const box=q('#bridgeBills');if(!box)return
+  try{
+    const {data,error}=await supabase.from('bills').select('*').eq('household_id',household.id).eq('active',true).order('due_at')
+    if(error)throw error
+    const soon=(data||[]).filter(b=>daysFromNow(b.due_at)<=Math.max(0,Number(b.reminder_days??1))).slice(0,4)
+    box.innerHTML=soon.length?soon.map(b=>`<div class="billAgenda"><span class="billRadar"></span><b>${E(b.name)}</b> · ${eur(b.amount)} · ${daysFromNow(b.due_at)<0?'OVERDUE':daysFromNow(b.due_at)===0?'today':daysFromNow(b.due_at)===1?'tomorrow':dateText(b.due_at)}<div class="muted">${E(billUrgency(b))}</div></div>`).join(''):'No one is currently rattling the coin slot.'
+  }catch(e){box.textContent='Financial radar is making concerning noises.'}
+}
+async function drawAgendaBills(){
+  const box=q('#agendaBills');if(!box)return
+  try{
+    const {data,error}=await supabase.from('bills').select('*').eq('household_id',household.id).eq('active',true).order('due_at')
+    if(error)throw error
+    const now=new Date()
+    let bills=data||[]
+    if(agendaView==='today')bills=bills.filter(b=>dateKey(b.due_at)===dateKey(now))
+    if(agendaView==='week'){
+      const delta=(now.getDay()+6)%7,mon=new Date(now);mon.setHours(0,0,0,0);mon.setDate(now.getDate()-delta);const sun=new Date(mon);sun.setDate(mon.getDate()+7)
+      bills=bills.filter(b=>new Date(b.due_at)>=mon&&new Date(b.due_at)<sun)
+    }
+    if(agendaView==='month')bills=bills.filter(b=>{const d=new Date(b.due_at);return d.getMonth()===now.getMonth()&&d.getFullYear()===now.getFullYear()})
+    box.innerHTML=`<div class="section-title">Treasury radar</div>${bills.length?bills.map(b=>`<div class="billAgenda"><span class="billRadar"></span><b>${E(b.name)}</b> · ${eur(b.amount)} · ${dateText(b.due_at)}${billUrgency(b)?`<div class="muted">${E(billUrgency(b))}</div>`:''}</div>`).join(''):`<div class="muted">${E(pick(moneyLines.emptyBills))}</div>`}`
+  }catch(e){box.innerHTML=`<div class="error">${E(pick(moneyLines.errors))}</div>`}
+}
+let treasuryTab='bills'
+async function treasury(){
+  app.innerHTML=`<main class="shell">${top('Treasury')}<div class="agendaToolbar"><div><h1 class="pageTitle">Treasury</h1><div class="muted">Unfortunately, numbers continue to exist.</div></div><div><button id="addBill" class="primary">ADD BILL</button> <button id="addDebt" class="ghost">ADD DEBT</button></div></div>
+  <div class="treasuryTabs"><button data-moneytab="bills" class="${treasuryTab==='bills'?'active':''}">BILLS</button><button data-moneytab="debt" class="${treasuryTab==='debt'?'active':''}">DEBT</button><button data-moneytab="history" class="${treasuryTab==='history'?'active':''}">HISTORY</button></div>
+  <section id="treasuryStage"><div class="panel card muted">Counting beans…</div></section></main>${nav()}`
+  wire();q('#addBill').onclick=()=>billModal();q('#addDebt').onclick=()=>debtModal()
+  qa('[data-moneytab]').forEach(b=>b.onclick=()=>{treasuryTab=b.dataset.moneytab;treasury()})
+  await drawTreasury()
+}
+async function drawTreasury(){
+  if(treasuryTab==='bills')return drawBills()
+  if(treasuryTab==='debt')return drawDebts()
+  return drawMoneyHistory()
+}
+async function drawBills(){
+  const stage=q('#treasuryStage')
+  try{
+    const [br,pr]=await Promise.all([
+      supabase.from('bills').select('*').eq('household_id',household.id).eq('active',true).order('due_at'),
+      supabase.from('bill_payments').select('*').eq('household_id',household.id).order('paid_at',{ascending:false})
+    ])
+    if(br.error)throw br.error
+    const bills=br.data||[],now=new Date(),monthBills=bills.filter(b=>{const d=new Date(b.due_at);return d.getMonth()===now.getMonth()&&d.getFullYear()===now.getFullYear()})
+    const known=monthBills.filter(b=>b.amount!==null).reduce((s,b)=>s+Number(b.amount),0),unknown=monthBills.filter(b=>b.amount===null).length
+    const paidThisMonth=(pr.data||[]).filter(p=>{const d=new Date(p.paid_at);return d.getMonth()===now.getMonth()&&d.getFullYear()===now.getFullYear()}).reduce((s,p)=>s+Number(p.paid_amount),0)
+    const mysteryText=unknown?` + ${unknown} ${Math.random()<.5?'MYSTERY BLIP'+(unknown===1?'':'S'):'MYSTERY THREAT'+(unknown===1?'':'S')}`:''
+    stage.innerHTML=`<section class="panel moneyCard"><div class="section-title">${now.toLocaleDateString('en-IE',{month:'long'})} obligations</div><div class="moneySummary"><div><span class="muted">Known</span><div class="bigMoney">${eur(known)}</div></div><div><span class="muted">Paid</span><div class="bigMoney">${eur(paidThisMonth)}</div></div><div><span class="muted">Remaining known</span><div class="bigMoney">${eur(Math.max(0,known-paidThisMonth))}</div></div></div>${unknown?`<div class="mystery">${E(mysteryText)}</div>`:''}</section>
+    <section class="panel card" style="margin-top:12px"><div class="section-title">Upcoming</div>${bills.length?bills.map(b=>billCard(b)).join(''):`<div class="empty">${E(pick(moneyLines.emptyBills))}</div>`}</section>`
+    wireBills()
+  }catch(e){moneyError(e)}
+}
+function billCard(b){
+  const urgent=billUrgency(b)
+  return `<article class="billCard"><div class="billTop"><div><div class="billName">${E(b.name)}</div><div class="taskMeta"><span class="chip">${eur(b.amount)}</span><span class="chip">${dateText(b.due_at)}</span><span class="chip">${E(b.recurrence_type==='one_off'?'one-off':`every ${b.recurrence_interval} ${b.recurrence_type}`)}</span></div>${urgent?`<div class="${daysFromNow(b.due_at)<0?'overdueBill':daysFromNow(b.due_at)===0?'dueToday':'dueSoon'}">${E(urgent)}</div>`:''}${b.notes?`<div class="taskNotes">${E(b.notes)}</div>`:''}</div><div class="moneyActions"><button data-paybill="${b.id}" data-due="${b.due_at}">MARK PAID</button><button data-editbill="${b.id}">EDIT</button><button data-delbill="${b.id}">×</button></div></div></article>`
+}
+function wireBills(){
+  qa('[data-paybill]').forEach(b=>b.onclick=()=>payBillModal(b.dataset.paybill,b.dataset.due))
+  qa('[data-editbill]').forEach(b=>b.onclick=()=>billModal(b.dataset.editbill))
+  qa('[data-delbill]').forEach(b=>b.onclick=()=>deleteBill(b.dataset.delbill))
+}
+async function billModal(id=null){
+  const bill=id?(await supabase.from('bills').select('*').eq('id',id).single()).data:null
+  const w=document.createElement('div');w.className='modalWrap'
+  const due=bill?.due_at?new Date(bill.due_at).toISOString().slice(0,16):''
+  w.innerHTML=`<section class="panel modal"><div class="section-title">${bill?'Edit bill':'New bill'}</div><form id="bf" class="formGrid">
+  <div class="field full"><label>Name</label><input id="bn" required value="${E(bill?.name||'')}"></div>
+  <div class="field"><label>Expected amount (optional)</label><input id="ba" type="number" min="0" step="0.01" value="${bill?.amount??''}"></div>
+  <div class="field"><label>Usual future amount (optional)</label><input id="bua" type="number" min="0" step="0.01" value="${bill?.usual_amount??bill?.amount??''}"></div>
+  <div class="field"><label>Due date/time</label><input id="bd" type="datetime-local" required value="${due}"></div>
+  <div class="field"><label>Repeats</label><select id="br"><option value="one_off">One off</option><option value="days" ${bill?.recurrence_type==='days'?'selected':''}>Every X days</option><option value="weeks" ${bill?.recurrence_type==='weeks'?'selected':''}>Every X weeks</option><option value="months" ${bill?.recurrence_type==='months'?'selected':''}>Every X months</option><option value="custom" ${bill?.recurrence_type==='custom'?'selected':''}>Custom / choose next manually</option></select></div>
+  <div class="field"><label>X</label><input id="bri" type="number" min="1" value="${bill?.recurrence_interval||1}"></div>
+  <div class="field"><label>Reminder up to 3 days before</label><input id="brem" type="number" min="0" max="3" value="${bill?.reminder_days??1}"></div>
+  <div class="field"><label>Reminder type</label><select id="bremt"><option value="in_app">In app</option><option value="notification" ${bill?.reminder_type==='notification'?'selected':''}>Notification</option><option value="both" ${bill?.reminder_type==='both'?'selected':''}>Both</option></select></div>
+  <div class="field full"><label>Notes</label><textarea id="bnote">${E(bill?.notes||'')}</textarea></div>
+  <div class="full"><button class="primary">${bill?'SAVE':'ADD BILL'}</button> <button id="bcancel" type="button" class="ghost">Cancel</button></div><p id="berr" class="error full"></p></form></section>`
+  document.body.appendChild(w);w.querySelector('#bcancel').onclick=()=>w.remove()
+  w.querySelector('#bf').onsubmit=async e=>{e.preventDefault();try{const payload={household_id:household.id,name:w.querySelector('#bn').value.trim(),amount:w.querySelector('#ba').value===''?null:Number(w.querySelector('#ba').value),usual_amount:w.querySelector('#bua').value===''?null:Number(w.querySelector('#bua').value),due_at:new Date(w.querySelector('#bd').value).toISOString(),recurrence_type:w.querySelector('#br').value,recurrence_interval:Number(w.querySelector('#bri').value)||1,reminder_days:Number(w.querySelector('#brem').value)||0,reminder_type:w.querySelector('#bremt').value,notes:w.querySelector('#bnote').value.trim()||null,updated_at:new Date().toISOString()};let r;if(id)r=await supabase.from('bills').update(payload).eq('id',id);else{payload.created_by=session.user.id;r=await supabase.from('bills').insert(payload)}if(r.error)throw r.error;w.remove();drawBills();bridgeBills();drawAgendaBills()}catch(err){w.querySelector('#berr').textContent=pick(moneyLines.errors);console.error(err)}}
+}
+async function payBillModal(id,snapshotDue){
+  const b=(await supabase.from('bills').select('*').eq('id',id).single()).data
+  if(!b||!b.active||b.due_at!==snapshotDue){toast(pick(moneyLines.alreadyPaid));return}
+  const w=document.createElement('div');w.className='modalWrap'
+  w.innerHTML=`<section class="panel modal"><div class="section-title">Pay ${E(b.name)}</div><form id="payf"><div class="field"><label>Amount paid</label><input id="pam" type="number" min="0" step="0.01" value="${b.amount??''}"></div><div class="field"><label>Payment date</label><input id="pad" type="datetime-local" value="${new Date().toISOString().slice(0,16)}"></div>${b.recurrence_type==='custom'?`<div class="field"><label>Next due date (custom recurrence)</label><input id="nextCustom" type="datetime-local"></div>`:''}<button class="primary">THEY'VE HAD ENOUGH</button> <button id="pcancel" type="button" class="ghost">Cancel</button><p id="perr" class="error"></p></form></section>`
+  document.body.appendChild(w);w.querySelector('#pcancel').onclick=()=>w.remove()
+  w.querySelector('#payf').onsubmit=async e=>{e.preventDefault();const av=w.querySelector('#pam').value,dv=w.querySelector('#pad').value;if(av==='')return w.querySelector('#perr').textContent=pick(moneyLines.needAmount);if(!dv)return w.querySelector('#perr').textContent=pick(moneyLines.needDate)
+    try{
+      const pr=await supabase.from('bill_payments').insert({household_id:household.id,bill_id:b.id,bill_name:b.name,expected_amount:b.amount,paid_amount:Number(av),due_at:b.due_at,paid_at:new Date(dv).toISOString(),paid_by:session.user.id});if(pr.error)throw pr.error
+      let nd=nextBillDate(b);if(b.recurrence_type==='custom')nd=w.querySelector('#nextCustom').value?new Date(w.querySelector('#nextCustom').value).toISOString():null
+      let ur;if(nd)ur=await supabase.from('bills').update({due_at:nd,amount:b.usual_amount,updated_at:new Date().toISOString()}).eq('id',b.id);else ur=await supabase.from('bills').update({active:false,updated_at:new Date().toISOString()}).eq('id',b.id);if(ur.error)throw ur.error
+      w.remove();toast(Math.random()<.5?'Tribute delivered. They can leave us alone now.':'Paid. Capitalism has been temporarily appeased.');drawBills();bridgeBills();drawAgendaBills()
+    }catch(err){moneyError(err)}
+  }
+}
+async function deleteBill(id){
+  if(!confirm(pick(moneyLines.billDelete)))return
+  const r=await supabase.from('bills').delete().eq('id',id);if(r.error)return moneyError(r);toast('Gone from the computer. Reality remains regrettably intact.');drawBills();bridgeBills();drawAgendaBills()
+}
+async function drawDebts(){
+  const stage=q('#treasuryStage')
+  try{
+    const {data,error}=await supabase.from('debts').select('*').eq('household_id',household.id).order('created_at')
+    if(error)throw error
+    const all=data||[],live=all.filter(d=>!d.defeated_at),dead=all.filter(d=>d.defeated_at),orig=all.reduce((s,d)=>s+Number(d.original_balance),0),cur=live.reduce((s,d)=>s+Number(d.current_balance),0)
+    stage.innerHTML=`<section class="panel card"><div class="section-title">Current debt</div>${live.length?live.map(debtCard).join(''):'<div class="empty">No active debt. That feels illegal.</div>'}</section>
+    <section class="panel moneyCard" style="margin-top:12px"><div class="section-title">Final combined health bar</div><div class="bigMoney">${eur(cur)} / ${eur(orig)}</div>${hpBar(cur,orig)}<div class="damageLine"><span>${eur(Math.max(0,orig-cur))} destroyed</span><span>${orig?Math.max(0,Math.min(100,(1-cur/orig)*100)).toFixed(1):100}% paid off</span></div></section>
+    <div class="portalWrap"><button id="trophyPortal" class="portal">ENTER<br>TROPHY<br>ROOM</button></div>`
+    qa('[data-paydebt]').forEach(b=>b.onclick=()=>debtPaymentModal(b.dataset.paydebt))
+    qa('[data-borrow]').forEach(b=>b.onclick=()=>borrowingModal(b.dataset.borrow))
+    qa('[data-correct]').forEach(b=>b.onclick=()=>correctionModal(b.dataset.correct))
+    qa('[data-editdebt]').forEach(b=>b.onclick=()=>debtModal(b.dataset.editdebt))
+    qa('[data-deldebt]').forEach(b=>b.onclick=()=>deleteDebt(b.dataset.deldebt))
+    q('#trophyPortal').onclick=()=>{active='trophy';render()}
+  }catch(e){moneyError(e)}
+}
+function hpBar(current,original){
+  const pct=original?Math.max(0,Math.min(100,Number(current)/Number(original)*100)):0
+  return `<div class="hpTrack"><div class="hpFill" style="width:${pct}%"></div><div class="hpText">${pct.toFixed(1)}% HP REMAINING</div></div><div class="milestones"><span>75</span><span>50</span><span>25</span><span>10</span><span>5</span><span>0</span></div>`
+}
+function debtCard(d){
+  const paid=Math.max(0,Number(d.original_balance)-Number(d.current_balance)),pct=d.original_balance?paid/Number(d.original_balance)*100:100
+  return `<article class="debtCard"><div class="debtTop"><div><div class="debtName">${E(d.name)}</div><div class="muted">${E(d.creditor||'')}</div></div><div class="moneyActions"><button data-paydebt="${d.id}">PAYMENT</button><button data-borrow="${d.id}">ADD BORROWING</button><button data-correct="${d.id}">CORRECT</button><button data-editdebt="${d.id}">EDIT</button><button data-deldebt="${d.id}">×</button></div></div><div class="bigMoney">${eur(d.current_balance)} HP</div>${hpBar(d.current_balance,d.original_balance)}<div class="damageLine"><span>${eur(paid)} paid · ${pct.toFixed(1)}%</span><span>${d.recurring_payment?`${eur(d.recurring_payment)} · ${E(d.payment_frequency||'recurring')}`:''}</span></div>${d.next_payment_at?`<div class="muted">Next payment: ${dateText(d.next_payment_at)}</div>`:''}</article>`
+}
+async function debtModal(id=null){
+  const d=id?(await supabase.from('debts').select('*').eq('id',id).single()).data:null,w=document.createElement('div');w.className='modalWrap'
+  const np=d?.next_payment_at?new Date(d.next_payment_at).toISOString().slice(0,16):''
+  w.innerHTML=`<section class="panel modal"><div class="section-title">${d?'Edit debt':'Add debt'}</div><form id="df" class="formGrid"><div class="field full"><label>Name</label><input id="dnm" required value="${E(d?.name||'')}"></div><div class="field full"><label>Who to pay / creditor</label><input id="dcr" value="${E(d?.creditor||'')}"></div><div class="field"><label>Original balance</label><input id="dob" type="number" min="0" step="0.01" required value="${d?.original_balance??''}"></div><div class="field"><label>Current balance</label><input id="dcb" type="number" min="0" step="0.01" required value="${d?.current_balance??d?.original_balance??''}"></div><div class="field"><label>Recurring payment</label><input id="drp" type="number" min="0" step="0.01" value="${d?.recurring_payment??''}"></div><div class="field"><label>Payment frequency</label><input id="dpf" placeholder="monthly, every 2 weeks…" value="${E(d?.payment_frequency||'')}"></div><div class="field full"><label>Next payment</label><input id="dnp" type="datetime-local" value="${np}"></div><div class="full"><button class="primary">${d?'SAVE':'ADD DEBT'}</button> <button id="dcancel" type="button" class="ghost">Cancel</button></div><p id="derr" class="error full"></p></form></section>`
+  document.body.appendChild(w);w.querySelector('#dcancel').onclick=()=>w.remove();w.querySelector('#df').onsubmit=async e=>{e.preventDefault();try{const payload={household_id:household.id,name:w.querySelector('#dnm').value.trim(),creditor:w.querySelector('#dcr').value.trim()||null,original_balance:Number(w.querySelector('#dob').value),current_balance:Number(w.querySelector('#dcb').value),recurring_payment:w.querySelector('#drp').value===''?null:Number(w.querySelector('#drp').value),payment_frequency:w.querySelector('#dpf').value.trim()||null,next_payment_at:w.querySelector('#dnp').value?new Date(w.querySelector('#dnp').value).toISOString():null,updated_at:new Date().toISOString()};let r;if(id)r=await supabase.from('debts').update(payload).eq('id',id);else{payload.created_by=session.user.id;r=await supabase.from('debts').insert(payload)}if(r.error)throw r.error;w.remove();drawDebts()}catch(err){w.querySelector('#derr').textContent=pick(moneyLines.errors);console.error(err)}}
+}
+function milestoneMessage(before,after,orig){
+  const b=orig?before/orig*100:0,a=orig?after/orig*100:0
+  const crosses=x=>b>x&&a<=x
+  if(after===0)return pick(['DEBTALITY.','THE DEBT HAS FALLEN. THE REALM ENDURES.','THE EMPIRE OF INTEREST HAS BEEN DEFEATED.','FINISH IT. OH WAIT. YOU DID.'])
+  if(crosses(75))return 'Basically half paid already. girlmath.'
+  if(crosses(50))return "WOOOAH We're halfway there"
+  if(crosses(25))return 'final stretch boiiiiiiii'
+  if(crosses(10))return 'TEN PERCENT. IT CAN SEE THE END AND IT IS AFRAID.'
+  if(crosses(5))return 'I can SMELL the freedom'
+  return null
+}
+async function debtPaymentModal(id){
+  const d=(await supabase.from('debts').select('*').eq('id',id).single()).data;if(!d)return
+  const w=document.createElement('div');w.className='modalWrap';w.innerHTML=`<section class="panel modal"><div class="section-title">Damage ${E(d.name)}</div><form id="dpfm"><div class="field"><label>Payment amount</label><input id="dpa" type="number" min="0" step="0.01" value="${d.recurring_payment??''}"></div><div class="field"><label>Or enter new balance</label><input id="dnb" type="number" min="0" step="0.01" placeholder="${Number(d.current_balance).toFixed(2)}"></div><div class="field"><label>Date</label><input id="dpd" type="datetime-local" value="${new Date().toISOString().slice(0,16)}"></div><button class="primary">HIT IT</button> <button id="dpcancel" type="button" class="ghost">Cancel</button><p id="dperr" class="error"></p></form></section>`;document.body.appendChild(w);w.querySelector('#dpcancel').onclick=()=>w.remove()
+  w.querySelector('#dpfm').onsubmit=async e=>{e.preventDefault();const amountRaw=w.querySelector('#dpa').value,newRaw=w.querySelector('#dnb').value;let amount,newBal;if(newRaw!==''){newBal=Number(newRaw);amount=Number(d.current_balance)-newBal}else{amount=Number(amountRaw);newBal=Number(d.current_balance)-amount}if(!amount||amount===0)return w.querySelector('#dperr').textContent=pick(moneyLines.zeroPay);if(amount<0)return w.querySelector('#dperr').textContent='That would be borrowing. Use ADD BORROWING so the computer knows which direction we are suffering in.';if(amount>Number(d.current_balance)){const f=pick(moneyLines.overpay);return w.querySelector('#dperr').textContent=f(Number(d.current_balance))}
+    try{const before=Number(d.current_balance),after=Math.max(0,newBal),at=new Date(w.querySelector('#dpd').value||Date.now()).toISOString();const er=await supabase.from('debt_events').insert({household_id:household.id,debt_id:d.id,event_type:'payment',amount,balance_before:before,balance_after:after,event_at:at,actor_user_id:session.user.id});if(er.error)throw er.error;const ur=await supabase.from('debts').update({current_balance:after,defeated_at:after===0?at:null,updated_at:new Date().toISOString()}).eq('id',d.id);if(ur.error)throw ur.error;w.remove();const mile=milestoneMessage(before,after,Number(d.original_balance));if(mile)toast(mile,5200);else toast(Math.random()<.3?pick(['Solid hit.','Nice. Make it suffer.','Debt reduced. Nature is healing.']):`${eur(amount)} paid ✓`);drawDebts()}catch(err){moneyError(err)}
+  }
+}
+async function borrowingModal(id){
+  const d=(await supabase.from('debts').select('*').eq('id',id).single()).data;if(!d)return
+  const a=prompt('How much new borrowing?');if(a===null)return;const amount=Number(a);if(!(amount>0))return toast('Give me an actual positive number, menace.')
+  const before=Number(d.current_balance),after=before+amount
+  try{await supabase.from('debt_events').insert({household_id:household.id,debt_id:d.id,event_type:'borrowing',amount,balance_before:before,balance_after:after,actor_user_id:session.user.id});await supabase.from('debts').update({current_balance:after,defeated_at:null,updated_at:new Date().toISOString()}).eq('id',id);const f=pick(moneyLines.borrow);toast(f(amount));drawDebts()}catch(e){moneyError(e)}
+}
+async function correctionModal(id){
+  const d=(await supabase.from('debts').select('*').eq('id',id).single()).data;if(!d)return
+  const a=prompt(`Correct current balance. Current: ${Number(d.current_balance).toFixed(2)}`,Number(d.current_balance).toFixed(2));if(a===null)return;const after=Number(a);if(after<0||Number.isNaN(after))return toast('That balance has offended mathematics.')
+  const before=Number(d.current_balance),amount=Math.abs(after-before)
+  try{await supabase.from('debt_events').insert({household_id:household.id,debt_id:d.id,event_type:'correction',amount,balance_before:before,balance_after:after,actor_user_id:session.user.id});await supabase.from('debts').update({current_balance:after,defeated_at:after===0?new Date().toISOString():null,updated_at:new Date().toISOString()}).eq('id',id);toast('Balance corrected. The books have stopped screaming.');drawDebts()}catch(e){moneyError(e)}
+}
+async function deleteDebt(id){
+  const events=(await supabase.from('debt_events').select('id').eq('debt_id',id).limit(1)).data||[]
+  if(events.length){
+    if(!confirm('This will delete the debt AND its entire payment history. Like, actually actually. Still delete it?'))return
+    if(!confirm(pick(['YOU ARE ABOUT TO YEET THE RECEIPTS INTO THE VOID. REALLY REALLY?','Last chance, bestie. The numbers will be GONE gone.','Final warning from Records: this is an actual delete, not a cute one.'])))return
+  }else if(!confirm('Delete this debt from the computer?'))return
+  const r=await supabase.from('debts').delete().eq('id',id);if(r.error)return moneyError(r);toast('Debt record launched into the sun.');drawDebts()
+}
+async function drawMoneyHistory(){
+  const stage=q('#treasuryStage')
+  try{
+    const [bp,de,debts]=await Promise.all([
+      supabase.from('bill_payments').select('*').eq('household_id',household.id).order('paid_at',{ascending:false}),
+      supabase.from('debt_events').select('*').eq('household_id',household.id).order('event_at',{ascending:false}),
+      supabase.from('debts').select('id,name').eq('household_id',household.id)
+    ])
+    const dm=Object.fromEntries((debts.data||[]).map(d=>[d.id,d.name]))
+    const rows=[
+      ...(bp.data||[]).map(x=>({date:x.paid_at,html:`<b>${E(x.bill_name)}</b> paid ${eur(x.paid_amount)}${x.expected_amount!==null&&Number(x.expected_amount)!==Number(x.paid_amount)?` <span class="muted">(expected ${eur(x.expected_amount)})</span>`:''}`})),
+      ...(de.data||[]).map(x=>({date:x.event_at,html:`<b>${E(dm[x.debt_id]||'Past debt')}</b> · ${x.event_type==='payment'?`<span class="damaged">${eur(x.amount)} damage</span>`:x.event_type==='borrowing'?`<span class="healed">healed +${eur(x.amount)}</span>`:'balance corrected'} · ${eur(x.balance_before)} → ${eur(x.balance_after)}`}))
+    ].sort((a,b)=>new Date(b.date)-new Date(a.date))
+    stage.innerHTML=`<section class="panel card"><div class="section-title">Financial history</div>${rows.length?rows.map(r=>`<div class="historyRow">${r.html}<div class="muted">${dateText(r.date)} · ${timeText(r.date)}</div></div>`).join(''):'<div class="empty">History is currently withholding comment.</div>'}</section>`
+  }catch(e){moneyError(e)}
+}
+async function trophyRoom(){
+  app.innerHTML=`<main class="shell trophyRoom">${top('Trophy Room')}<div class="agendaToolbar"><div><h1 class="pageTitle">Trophy Room</h1><div class="muted">Past debt. Preserved here so we can point and laugh.</div></div><button id="leaveTrophy" class="ghost">RETURN THROUGH PORTAL</button></div><div id="trophies" class="trophyShelf" style="margin-top:18px"></div></main>${nav()}`
+  wire();q('#leaveTrophy').onclick=()=>{active='treasury';treasuryTab='debt';render()}
+  try{const {data,error}=await supabase.from('debts').select('*').eq('household_id',household.id).not('defeated_at','is',null).order('defeated_at',{ascending:false});if(error)throw error;q('#trophies').innerHTML=data?.length?data.map(d=>`<article class="trophy"><div class="trophySeal">0 HP</div><h2>${E(d.name)}</h2><div class="muted">${eur(d.original_balance)} defeated</div><div>${dateText(d.defeated_at)}</div></article>`).join(''):`<div class="empty">${E(pick(moneyLines.trophyEmpty))}</div>`}catch(e){moneyError(e)}
+}
+
 function placeholder(t){app.innerHTML=`<main class="shell">${top(t)}<section class="panel card"><h1 class="pageTitle">${E(t)}</h1><p class="muted">Coming soon.</p></section></main>${nav()}`;wire()}
-function render(){document.body.classList.remove('shoppingMode');if(active==='bridge')bridge();else if(active==='crew')crew();else if(active==='agenda')agenda();else if(active==='more')more();else if(active==='shopping')shopping();else placeholder(active==='log'?"Captain's Log":active[0].toUpperCase()+active.slice(1))}
+function render(){document.body.classList.remove('shoppingMode');if(active==='bridge')bridge();else if(active==='crew')crew();else if(active==='agenda')agenda();else if(active==='more')more();else if(active==='shopping')shopping();else if(active==='treasury')treasury();else if(active==='trophy')trophyRoom();else placeholder(active==='log'?"Captain's Log":active[0].toUpperCase()+active.slice(1))}
 function subscribe(){if(channel)supabase.removeChannel(channel);channel=supabase.channel('bridge-'+household.id).on('postgres_changes',{event:'*',schema:'public',table:'cat_feedings',filter:`household_id=eq.${household.id}`},()=>{if(active==='bridge')loadCats()}).on('postgres_changes',{event:'*',schema:'public',table:'tasks',filter:`household_id=eq.${household.id}`},()=>{if(active==='agenda')drawAgenda();if(active==='bridge')bridgeTasks()}).on('postgres_changes',{event:'*',schema:'public',table:'task_categories',filter:`household_id=eq.${household.id}`},()=>{if(active==='agenda')drawAgenda()})
 .on('postgres_changes',{event:'*',schema:'public',table:'shopping_items',filter:`household_id=eq.${household.id}`},payload=>{
   if(active==='shopping'){
@@ -200,6 +507,10 @@ function subscribe(){if(channel)supabase.removeChannel(channel);channel=supabase
   }
 })
 .on('postgres_changes',{event:'*',schema:'public',table:'shopping_lists',filter:`household_id=eq.${household.id}`},()=>{if(active==='shopping')shopping()})
+.on('postgres_changes',{event:'*',schema:'public',table:'bills',filter:`household_id=eq.${household.id}`},()=>{if(active==='treasury'&&treasuryTab==='bills')drawBills();if(active==='bridge')bridgeBills();if(active==='agenda')drawAgendaBills()})
+.on('postgres_changes',{event:'*',schema:'public',table:'bill_payments',filter:`household_id=eq.${household.id}`},()=>{if(active==='treasury')drawTreasury()})
+.on('postgres_changes',{event:'*',schema:'public',table:'debts',filter:`household_id=eq.${household.id}`},()=>{if(active==='treasury'&&treasuryTab==='debt')drawDebts();if(active==='trophy')trophyRoom()})
+.on('postgres_changes',{event:'*',schema:'public',table:'debt_events',filter:`household_id=eq.${household.id}`},()=>{if(active==='treasury'&&treasuryTab==='history')drawMoneyHistory()})
 .subscribe()}
 async function boot(){if(!configured)return auth();session=(await supabase.auth.getSession()).data.session;if(session){await userData();if(household){await ensureCategories();await ensureShoppingLists();subscribe();render()}else onboard()}else auth();supabase.auth.onAuthStateChange(async(_,s)=>{session=s;if(!s){profile=household=null;return auth()}await userData();if(household){await ensureCategories();await ensureShoppingLists();subscribe();render()}else onboard()})}
 boot()
