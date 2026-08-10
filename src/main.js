@@ -5,7 +5,7 @@ const app=document.querySelector('#app')
 let session=null,household=null,profile=null,active='bridge',agendaView='today',channel=null
 const E=s=>String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))
 const q=s=>document.querySelector(s),qa=s=>[...document.querySelectorAll(s)]
-const nav=()=>`<nav class="nav">${['bridge','agenda','crew','log','more'].map(x=>`<button data-tab="${x}" class="${active===x?'active':''}">${x.toUpperCase()}</button>`).join('')}</nav>`
+const nav=()=>`<nav class="nav">${['bridge','agenda','crew','log','more'].map(x=>`<button data-tab="${x}" class="${(active===x||(active==='shopping'&&x==='more'))?'active':''}">${x.toUpperCase()}</button>`).join('')}</nav>`
 const top=t=>`<header class="top"><div><div class="brand">${E(t||'The Bridge')}</div><div class="muted">${E(household?.name||'')}</div></div><button id="logout" class="ghost">Log out</button></header>`
 function wire(){q('#logout')?.addEventListener('click',()=>supabase.auth.signOut());qa('[data-tab]').forEach(b=>b.onclick=()=>{active=b.dataset.tab;render()})}
 async function userData(){const u=session.user.id;profile=(await supabase.from('profiles').select('*').eq('user_id',u).maybeSingle()).data;const m=(await supabase.from('household_members').select('household_id').eq('user_id',u).limit(1).maybeSingle()).data;household=m?(await supabase.from('households').select('*').eq('id',m.household_id).single()).data:null}
@@ -18,7 +18,7 @@ function auth(){
 function onboard(){
  app.innerHTML=`<main class="shell"><section class="panel setup"><div class="brand">Crew Registration</div>${!profile?`<h1>Create your profile</h1><form id="pf"><div class="field"><label>Name</label><input id="dn" required></div><div class="field"><label>Nickname</label><input id="nn"></div><button class="primary">SAVE PROFILE</button></form>`:`<h1>Join your ship</h1><div class="tabs"><button id="create" class="primary">Create household</button><button id="join">Join with code</button></div><div id="ja"></div>`}<p id="msg" class="error"></p></section></main>`
  if(!profile)q('#pf').onsubmit=async e=>{e.preventDefault();const r=await supabase.from('profiles').insert({user_id:session.user.id,display_name:q('#dn').value,nickname:q('#nn').value});if(r.error)return q('#msg').textContent=r.error.message;await userData();onboard()}
- else{q('#create').onclick=async()=>{const r=await supabase.rpc('create_household',{household_name:'The Bridge'});if(r.error)return q('#msg').textContent=r.error.message;await userData();await seedCats();await ensureCategories();subscribe();active='crew';render()};q('#join').onclick=()=>{q('#ja').innerHTML=`<form id="jf"><div class="field"><label>Invite code</label><input id="ic" required></div><button class="primary">COME ABOARD</button></form>`;q('#jf').onsubmit=async e=>{e.preventDefault();const r=await supabase.rpc('join_household',{code:q('#ic').value});if(r.error)return q('#msg').textContent=r.error.message;await userData();await ensureCategories();subscribe();active='crew';render()}}}
+ else{q('#create').onclick=async()=>{const r=await supabase.rpc('create_household',{household_name:'The Bridge'});if(r.error)return q('#msg').textContent=r.error.message;await userData();await seedCats();await ensureCategories();await ensureShoppingLists();subscribe();active='crew';render()};q('#join').onclick=()=>{q('#ja').innerHTML=`<form id="jf"><div class="field"><label>Invite code</label><input id="ic" required></div><button class="primary">COME ABOARD</button></form>`;q('#jf').onsubmit=async e=>{e.preventDefault();const r=await supabase.rpc('join_household',{code:q('#ic').value});if(r.error)return q('#msg').textContent=r.error.message;await userData();await ensureCategories();await ensureShoppingLists();subscribe();active='crew';render()}}}
 }
 async function seedCats(){const old=(await supabase.from('cats').select('id').eq('household_id',household.id).limit(1)).data;if(old?.length)return;const cats=(await supabase.from('cats').insert([{household_id:household.id,name:'Pukha',breed:'British Longhair',job_title:'Senior Household Supervisor'},{household_id:household.id,name:'Pluto',breed:'Domestic shorthair',job_title:'Head of Ruling From High Places'}]).select()).data;for(const c of cats||[])await supabase.from('cat_feeding_schedules').insert(['05:00','13:00','21:00'].map(t=>({cat_id:c.id,feeding_time:t})))}
 
@@ -30,8 +30,8 @@ const timeText=x=>x?new Date(x).toLocaleTimeString('en-IE',{hour:'2-digit',minut
 function overdue(t){if(!t.due_at||t.status==='done')return'';const h=(Date.now()-new Date(t.due_at))/36e5;if(h<=0)return'';if(h<6)return'<div class="over1">Temporal hiccup detected.</div>';if(h<24)return'<div class="over2">This has become mildly embarrassing.</div>';if(h<72)return'<div class="over3">TEMPORAL ANOMALY DETECTED.</div>';return'<div class="over4">WE HAVE ABANDONED THE TIMELINE.</div>'}
 
 async function bridge(){
- app.innerHTML=`<main class="shell">${top()}<div id="hunger"></div><div class="grid"><section class="panel hero"><span class="muted">CURRENTLY ABOARD:</span><h1>${E(profile?.display_name)}</h1><div>Why don't starships ever get lost?<br><span class="muted">They always follow their enterprise.</span></div></section><section class="panel card cats"><div class="section-title">The children</div><div id="cats" class="catrow">Scanning…</div></section><section class="panel card notes"><div class="section-title">Sticky notes</div><div class="sticky">There is cake in the fridge.<br><br>This is not a drill.</div></section><section class="panel card agenda"><div class="section-title">Today</div><div id="todayTasks" class="muted">Consulting the timeline…</div></section><section class="panel card ops"><div class="section-title">House status</div><div class="muted">No disasters currently detected. Suspicious.</div></section></div></main><button id="plus" class="plus">+</button><section id="menu" class="panel menu" hidden><button>NOTE</button><button id="quickTask">TASK</button><button>PLAN</button><button>STUFF</button><button>MONEY</button></section>${nav()}`
- wire();q('#plus').onclick=()=>q('#menu').hidden=!q('#menu').hidden;q('#quickTask').onclick=()=>taskModal();await Promise.all([loadCats(),bridgeTasks()])
+ app.innerHTML=`<main class="shell">${top()}<div id="hunger"></div><div class="grid"><section class="panel hero"><span class="muted">CURRENTLY ABOARD:</span><h1>${E(profile?.display_name)}</h1><div>Why don't starships ever get lost?<br><span class="muted">They always follow their enterprise.</span></div></section><section class="panel card cats"><div class="section-title">The children</div><div id="cats" class="catrow">Scanning…</div></section><section class="panel card notes"><div class="section-title">Sticky notes</div><div class="sticky">There is cake in the fridge.<br><br>This is not a drill.</div></section><section class="panel card agenda"><div class="section-title">Today</div><div id="todayTasks" class="muted">Consulting the timeline…</div></section><section class="panel card ops"><div class="section-title">House status</div><div class="muted">No disasters currently detected. Suspicious.</div></section></div></main><button id="plus" class="plus">+</button><section id="menu" class="panel menu" hidden><button>NOTE</button><button id="quickTask">TASK</button><button>PLAN</button><button id="quickStuff">STUFF</button><button>MONEY</button></section>${nav()}`
+ wire();q('#plus').onclick=()=>q('#menu').hidden=!q('#menu').hidden;q('#quickTask').onclick=()=>taskModal();q('#quickStuff').onclick=()=>shoppingItemModal();await Promise.all([loadCats(),bridgeTasks()])
 }
 async function bridgeTasks(){const box=q('#todayTasks');if(!box)return;const today=dateKey(new Date()),{data}=await supabase.from('tasks').select('*').eq('household_id',household.id).eq('status','needs_doing').order('due_at');const list=(data||[]).filter(t=>t.due_at&&dateKey(t.due_at)===today);box.innerHTML=list.length?list.slice(0,5).map(t=>`<div class="row"><span>${E(t.title)}</span><span>${t.all_day?'TODAY':timeText(t.due_at)}</span></div>`).join(''):'No disasters currently detected. Probably.'}
 async function loadCats(){const box=q('#cats'),hb=q('#hunger');if(!box)return;try{const cr=await supabase.from('cats').select('*,cat_feeding_schedules(*)').eq('household_id',household.id).order('name');if(cr.error)throw cr.error;const fr=await supabase.from('cat_feedings').select('*').eq('household_id',household.id).eq('feeding_date',dateKey(new Date())).order('recorded_at',{ascending:false});if(fr.error)throw fr.error;const fs=fr.data||[],users=[...new Set(fs.map(x=>x.recorded_by))],names={};if(users.length){for(const p of (await supabase.from('profiles').select('user_id,display_name').in('user_id',users)).data||[])names[p.user_id]=p.display_name}const now=new Date(),mins=now.getHours()*60+now.getMinutes();let lateAny=false;box.innerHTML=(cr.data||[]).map(c=>`<article class="cat"><div class="catname">${E(c.name)}</div><div class="muted">${E(c.breed)}</div><div class="bowls">${(c.cat_feeding_schedules||[]).sort((a,b)=>a.feeding_time.localeCompare(b.feeding_time)).map(s=>{const f=fs.find(x=>x.cat_id===c.id&&x.schedule_id===s.id),[h,m]=s.feeding_time.split(':').map(Number),late=!f&&mins>h*60+m+60;if(late)lateAny=true;return`<button class="bowl ${f?f.status:late?'overdue':''}" data-cat="${c.id}" data-sch="${s.id}" data-time="${s.feeding_time.slice(0,5)}">${s.feeding_time.slice(0,5)}<br>${f?f.status.toUpperCase():late?'HUNGRY':'○'}${f?`<div class="stamp">${E(names[f.recorded_by]||'Crew')} · ${timeText(f.recorded_at)}</div>`:''}</button>`}).join('')}</div></article>`).join('');hb.innerHTML=lateAny?'<div class="alert">THE CHILDREN HUNGER. THIS IS NOT A DRILL.</div>':'';qa('.bowl').forEach(b=>b.onclick=()=>feedModal(b.dataset.cat,b.dataset.sch,b.dataset.time))}catch(e){box.innerHTML=`<div class="error">FELINE SCANNER MALFUNCTION: ${E(e.message)}</div>`}}
@@ -55,8 +55,151 @@ async function completeTask(id){const t=(await supabase.from('tasks').select('*,
 async function uploadPhoto(file){if(!file)return null;const path=`${household.id}/${session.user.id}/${Date.now()}-${file.name.replace(/[^a-zA-Z0-9._-]/g,'_')}`;const r=await supabase.storage.from('task-photos').upload(path,file);if(r.error)throw r.error;return path}
 async function taskModal(id=null){const cats=(await supabase.from('task_categories').select('*').eq('household_id',household.id).order('sort_order')).data||[],ms=(await supabase.from('household_members').select('user_id').eq('household_id',household.id)).data||[],ids=ms.map(x=>x.user_id),ps=ids.length?(await supabase.from('profiles').select('user_id,display_name').in('user_id',ids)).data||[]:[],t=id?(await supabase.from('tasks').select('*,task_subtasks(*)').eq('id',id).single()).data:null,w=document.createElement('div');w.className='modalWrap';const due=t?.due_at?new Date(t.due_at).toISOString().slice(0,16):'';w.innerHTML=`<section class="panel modal"><div class="section-title">${t?'Edit temporal problem':'New temporal problem'}</div><form id="tf" class="formGrid"><div class="field full"><label>Task</label><input id="tt" required value="${E(t?.title||'')}"></div><div class="field"><label>Category</label><select id="tc">${cats.map(c=>`<option value="${c.id}" ${c.id===t?.category_id?'selected':''}>${E(c.name)}</option>`).join('')}</select></div><div class="field"><label>Assigned to</label><select id="ta"><option value="either">Either</option><option value="both" ${t?.assignment_type==='both'?'selected':''}>Both</option>${ps.map(p=>`<option value="user:${p.user_id}" ${t?.assigned_user_id===p.user_id?'selected':''}>${E(p.display_name)}</option>`).join('')}</select></div><div class="field"><label>Due date/time</label><input id="td" type="datetime-local" value="${due}"></div><div class="field"><label>All day</label><select id="al"><option value="false">No</option><option value="true" ${t?.all_day?'selected':''}>Yes</option></select></div><div class="field"><label>Repeat</label><select id="rt"><option value="none">No repeat</option><option value="daily" ${t?.recurrence_type==='daily'?'selected':''}>Daily</option><option value="weekly" ${t?.recurrence_type==='weekly'?'selected':''}>Weekly</option><option value="monthly" ${t?.recurrence_type==='monthly'?'selected':''}>Monthly</option><option value="custom_days" ${t?.recurrence_type==='custom_days'?'selected':''}>Every X days</option></select></div><div class="field"><label>Interval</label><input id="ri" type="number" min="1" value="${t?.recurrence_interval||1}"></div><div class="field full"><label>Notes</label><textarea id="tn">${E(t?.notes||'')}</textarea></div><div class="field full"><label>Subtasks, one per line</label><textarea id="ts">${E((t?.task_subtasks||[]).sort((a,b)=>a.sort_order-b.sort_order).map(s=>s.text).join('\n'))}</textarea></div><div class="field full"><label>Photo</label><input id="tp" type="file" accept="image/*"></div><div class="full"><button class="primary">${t?'SAVE CHANGES':'ADD TO TIMELINE'}</button> <button id="cancel" type="button" class="ghost">Cancel</button></div><p id="terr" class="error full"></p></form></section>`;document.body.appendChild(w);w.querySelector('#cancel').onclick=()=>w.remove();w.querySelector('#tf').onsubmit=async e=>{e.preventDefault();try{const av=w.querySelector('#ta').value,specific=av.startsWith('user:'),file=w.querySelector('#tp').files[0],photo=file?await uploadPhoto(file):t?.photo_path||null,p={household_id:household.id,title:w.querySelector('#tt').value.trim(),notes:w.querySelector('#tn').value.trim()||null,category_id:w.querySelector('#tc').value||null,assignment_type:specific?'specific':av,assigned_user_id:specific?av.slice(5):null,due_at:w.querySelector('#td').value?new Date(w.querySelector('#td').value).toISOString():null,all_day:w.querySelector('#al').value==='true',recurrence_type:w.querySelector('#rt').value,recurrence_interval:+w.querySelector('#ri').value||1,photo_path:photo,updated_at:new Date().toISOString()};let tid=id;if(id){const r=await supabase.from('tasks').update(p).eq('id',id);if(r.error)throw r.error;await supabase.from('task_subtasks').delete().eq('task_id',id)}else{p.created_by=session.user.id;const r=await supabase.from('tasks').insert(p).select().single();if(r.error)throw r.error;tid=r.data.id}const lines=w.querySelector('#ts').value.split('\n').map(x=>x.trim()).filter(Boolean);if(lines.length)await supabase.from('task_subtasks').insert(lines.map((text,i)=>({task_id:tid,text,sort_order:i})));w.remove();if(active==='agenda')drawAgenda();if(active==='bridge')bridgeTasks()}catch(err){w.querySelector('#terr').textContent=err.message}}}
 async function categoryModal(){const cats=(await supabase.from('task_categories').select('*').eq('household_id',household.id).order('sort_order')).data||[],w=document.createElement('div');w.className='modalWrap';w.innerHTML=`<section class="panel modal"><div class="section-title">Shared categories</div><div>${cats.map(c=>`<div class="catEdit"><span class="colorDot" style="background:${c.color}"></span><input data-name="${c.id}" value="${E(c.name)}"><input data-color="${c.id}" type="color" value="${c.color}"><button class="tiny" data-del="${c.id}">×</button></div>`).join('')}</div><div class="field"><label>Add category</label><input id="cn"><input id="cc" type="color" value="#8a6ea8"></div><button id="add" class="primary">ADD CATEGORY</button> <button id="close" class="ghost">Done</button><p id="ce" class="error"></p></section>`;document.body.appendChild(w);w.querySelector('#close').onclick=()=>w.remove();w.querySelector('#add').onclick=async()=>{const n=w.querySelector('#cn').value.trim();if(!n)return;const r=await supabase.from('task_categories').insert({household_id:household.id,name:n,color:w.querySelector('#cc').value,created_by:session.user.id,sort_order:cats.length+1});if(r.error)return w.querySelector('#ce').textContent=r.error.message;w.remove();categoryModal()};w.querySelectorAll('[data-name]').forEach(i=>i.onchange=()=>supabase.from('task_categories').update({name:i.value}).eq('id',i.dataset.name));w.querySelectorAll('[data-color]').forEach(i=>i.onchange=()=>supabase.from('task_categories').update({color:i.value}).eq('id',i.dataset.color));w.querySelectorAll('[data-del]').forEach(b=>b.onclick=async()=>{if(confirm('Delete this category? Tasks stay, just uncategorised.')){await supabase.from('task_categories').delete().eq('id',b.dataset.del);w.remove();categoryModal()}})}
+
+const defaultShoppingLists=[['Groceries','#9f6f83'],['Household','#777c86'],['Pharmacy','#6e8694'],['Other','#76627f']]
+async function ensureShoppingLists(){
+  if(!household)return
+  const x=(await supabase.from('shopping_lists').select('id').eq('household_id',household.id).limit(1)).data
+  if(x?.length)return
+  await supabase.from('shopping_lists').insert(defaultShoppingLists.map((a,i)=>({household_id:household.id,name:a[0],color:a[1],sort_order:i,created_by:session.user.id})))
+}
+async function more(){
+  app.innerHTML=`<main class="shell">${top('More')}<h1 class="pageTitle">Systems</h1><div class="moreGrid">
+    <section id="openShopping" class="panel moduleCard"><div class="section-title">Cargo</div><h2>Shopping</h2><p class="muted">Needs, wants, photos, lists, shops and live additions.</p></section>
+    <section class="panel moduleCard"><div class="section-title">Cold Storage</div><h2>Freezer</h2><p class="muted">Coming next.</p></section>
+    <section class="panel moduleCard"><div class="section-title">Financial Hostiles</div><h2>Bills & Boss Battles</h2><p class="muted">Coming soon.</p></section>
+    <section class="panel moduleCard"><div class="section-title">Sickbay</div><h2>Take Your Drugs</h2><p class="muted">Suspiciously simple by design.</p></section>
+  </div></main>${nav()}`
+  wire();q('#openShopping').onclick=()=>{active='shopping';render()}
+}
+async function shopping(){
+  await ensureShoppingLists()
+  const lists=(await supabase.from('shopping_lists').select('*').eq('household_id',household.id).order('sort_order')).data||[]
+  app.innerHTML=`<main class="shell"><div class="shoppingTop">${top('Cargo')}<div class="secondaryControls"><button id="addItem" class="primary">ADD ITEM</button> <button id="shopMode" class="ghost">SHOPPING MODE</button> <button id="manageLists" class="ghost">LISTS</button></div></div>
+  <div id="newCargoPing"></div>
+  <div class="filterBar filterExtras"><select id="listFilter"><option value="all">All lists</option>${lists.map(l=>`<option value="${l.id}">${E(l.name)}</option>`).join('')}</select><select id="typeFilter"><option value="all">Needs + Wants</option><option value="need">Needs only</option><option value="want">Wants only</option></select><select id="shopFilter"><option value="all">All shops</option></select><button id="clearFilters">CLEAR</button></div>
+  <section class="panel card"><div class="section-title">Frequent cargo</div><div id="favourites" class="frequentGrid"><span class="muted">Loading repeat offenders…</span></div></section>
+  <section class="panel card" style="margin-top:12px"><div class="shoppingTop"><div><div class="section-title">Active manifest</div><div class="muted">Bought items fall to the bottom until you finish the shop.</div></div><button id="finishShop" class="finishShop">FINISH SHOP</button></div><div id="shoppingList" class="shopList" style="margin-top:12px"></div></section>
+  </main><button id="plus" class="plus">+</button>${nav()}`
+  wire()
+  q('#addItem').onclick=()=>shoppingItemModal()
+  q('#plus').onclick=()=>shoppingItemModal()
+  q('#shopMode').onclick=()=>document.body.classList.toggle('shoppingMode')
+  q('#manageLists').onclick=()=>shoppingListsModal()
+  q('#clearFilters').onclick=()=>{q('#listFilter').value='all';q('#typeFilter').value='all';q('#shopFilter').value='all';drawShopping()}
+  ;['#listFilter','#typeFilter','#shopFilter'].forEach(s=>q(s).onchange=drawShopping)
+  q('#finishShop').onclick=finishShoppingTrip
+  await drawShopping(true)
+}
+async function getShoppingData(){
+  const [ir,lr]=await Promise.all([
+    supabase.from('shopping_items').select('*').eq('household_id',household.id).eq('archived',false).order('is_bought').order('created_at'),
+    supabase.from('shopping_lists').select('*').eq('household_id',household.id).order('sort_order')
+  ])
+  if(ir.error)throw ir.error
+  return {items:ir.data||[],lists:lr.data||[]}
+}
+async function drawShopping(initial=false){
+  const box=q('#shoppingList');if(!box)return
+  try{
+    const {items,lists}=await getShoppingData(),lm=Object.fromEntries(lists.map(l=>[l.id,l]))
+    const shops=[...new Set(items.map(i=>i.shop).filter(Boolean))].sort()
+    const sf=q('#shopFilter')
+    const old=sf?.value||'all'
+    if(sf){sf.innerHTML=`<option value="all">All shops</option>${shops.map(s=>`<option value="${E(s)}">${E(s)}</option>`).join('')}`;if([...sf.options].some(o=>o.value===old))sf.value=old}
+    const lf=q('#listFilter')?.value||'all',tf=q('#typeFilter')?.value||'all',shf=q('#shopFilter')?.value||'all'
+    const filtered=items.filter(i=>(lf==='all'||i.list_id===lf)&&(tf==='all'||i.priority_type===tf)&&(shf==='all'||i.shop===shf))
+    const favs=items.filter(i=>i.is_favourite&&!i.is_bought)
+    const fbox=q('#favourites')
+    if(fbox)fbox.innerHTML=favs.length?favs.slice(0,12).map(i=>`<button class="frequentBtn" data-favadd="${i.id}">${E(i.name)}${i.quantity?` · ${E(i.quantity)}`:''}</button>`).join(''):'<span class="muted">Star repeat buys and they live here.</span>'
+    box.innerHTML=filtered.length?filtered.sort((a,b)=>Number(a.is_bought)-Number(b.is_bought)||new Date(a.created_at)-new Date(b.created_at)).map(i=>{
+      const l=lm[i.list_id]||{name:'Other',color:'#777'}
+      return `<article class="shopItem ${i.is_bought?'bought':''}" data-item="${i.id}">
+        <button class="shopCheck" data-buy="${i.id}">${i.is_bought?'✓':''}</button>
+        <div><div class="shopName">${E(i.name)} ${i.is_favourite?'<span class="fav">★</span>':''}</div>
+        <div class="shopMeta"><span class="chip" style="border-color:${l.color}">${E(l.name)}</span><span class="chip ${i.priority_type==='need'?'needChip':'wantChip'}">${i.priority_type.toUpperCase()}</span>${i.quantity?`<span class="chip">Qty: ${E(i.quantity)}</span>`:''}${i.shop?`<span class="chip">${E(i.shop)}</span>`:''}${i.photo_path?'<span class="photoBadge">photo</span>':''}</div>
+        ${i.note?`<div class="shopNote">${E(i.note)}</div>`:''}</div>
+        <div class="shopActions"><button class="tiny" data-star="${i.id}">${i.is_favourite?'UNSTAR':'STAR'}</button><button class="tiny" data-editshop="${i.id}">EDIT</button><button class="tiny" data-delshop="${i.id}">×</button></div>
+      </article>`
+    }).join(''):'<div class="empty">Cargo hold empty. Either you are brilliantly prepared or you forgot everything.</div>'
+    qa('[data-buy]').forEach(b=>b.onclick=()=>toggleBought(b.dataset.buy))
+    qa('[data-star]').forEach(b=>b.onclick=async()=>{const it=items.find(i=>i.id===b.dataset.star);await supabase.from('shopping_items').update({is_favourite:!it.is_favourite,updated_at:new Date().toISOString()}).eq('id',it.id);drawShopping()})
+    qa('[data-editshop]').forEach(b=>b.onclick=()=>shoppingItemModal(b.dataset.editshop))
+    qa('[data-delshop]').forEach(b=>b.onclick=async()=>{if(confirm('Remove this from the manifest?'))await supabase.from('shopping_items').delete().eq('id',b.dataset.delshop)})
+    qa('[data-favadd]').forEach(b=>b.onclick=async()=>{const src=items.find(i=>i.id===b.dataset.favadd);if(!src)return;await supabase.from('shopping_items').insert({household_id:household.id,list_id:src.list_id,name:src.name,quantity:src.quantity,priority_type:src.priority_type,shop:src.shop,note:src.note,is_favourite:true,created_by:session.user.id})})
+  }catch(e){box.innerHTML=`<div class="error">${E(e.message)}</div>`}
+}
+async function toggleBought(id){
+  const i=(await supabase.from('shopping_items').select('*').eq('id',id).single()).data;if(!i)return
+  await supabase.from('shopping_items').update({is_bought:!i.is_bought,bought_by:!i.is_bought?session.user.id:null,bought_at:!i.is_bought?new Date().toISOString():null,updated_at:new Date().toISOString()}).eq('id',id)
+}
+async function finishShoppingTrip(){
+  const bought=(await supabase.from('shopping_items').select('id').eq('household_id',household.id).eq('archived',false).eq('is_bought',true)).data||[]
+  if(!bought.length)return alert('Nothing is crossed off yet. The cargo officers are confused.')
+  if(!confirm(`Finish shop and clear ${bought.length} bought item${bought.length===1?'':'s'} from the active list?`))return
+  await supabase.from('shopping_items').update({archived:true,archived_at:new Date().toISOString(),updated_at:new Date().toISOString()}).in('id',bought.map(x=>x.id))
+}
+async function uploadShoppingPhoto(file){
+  if(!file)return null
+  const path=`${household.id}/${session.user.id}/${Date.now()}-${file.name.replace(/[^a-zA-Z0-9._-]/g,'_')}`
+  const r=await supabase.storage.from('shopping-photos').upload(path,file)
+  if(r.error)throw r.error
+  return path
+}
+async function shoppingItemModal(id=null){
+  await ensureShoppingLists()
+  const lists=(await supabase.from('shopping_lists').select('*').eq('household_id',household.id).order('sort_order')).data||[]
+  const item=id?(await supabase.from('shopping_items').select('*').eq('id',id).single()).data:null
+  const w=document.createElement('div');w.className='modalWrap'
+  w.innerHTML=`<section class="panel modal"><div class="section-title">${item?'Edit cargo':'Add cargo'}</div><form id="sif" class="formGrid">
+    <div class="field full"><label>Item</label><input id="sin" required value="${E(item?.name||'')}"></div>
+    <div class="field"><label>List</label><select id="sil">${lists.map(l=>`<option value="${l.id}" ${l.id===item?.list_id?'selected':''}>${E(l.name)}</option>`).join('')}</select></div>
+    <div class="field"><label>Need or want?</label><select id="sip"><option value="need" ${item?.priority_type!=='want'?'selected':''}>Need</option><option value="want" ${item?.priority_type==='want'?'selected':''}>Want</option></select></div>
+    <div class="field"><label>Quantity</label><input id="siq" placeholder="2, 500 g, N/A…" value="${E(item?.quantity||'')}"></div>
+    <div class="field"><label>Shop (optional)</label><input id="sis" placeholder="Lidl, Aldi…" value="${E(item?.shop||'')}"></div>
+    <div class="field full"><label>Note</label><textarea id="sinote">${E(item?.note||'')}</textarea></div>
+    <div class="field full"><label>Photo</label><input id="siphoto" type="file" accept="image/*"></div>
+    <div class="field full"><label><input id="sifav" type="checkbox" ${item?.is_favourite?'checked':''}> Save as a repeat buy</label></div>
+    <div class="full"><button class="primary">${item?'SAVE':'ADD TO CARGO'}</button> <button id="sicancel" type="button" class="ghost">Cancel</button></div><p id="sierr" class="error full"></p>
+  </form></section>`
+  document.body.appendChild(w);w.querySelector('#sicancel').onclick=()=>w.remove()
+  w.querySelector('#sif').onsubmit=async e=>{
+    e.preventDefault()
+    try{
+      let photo=item?.photo_path||null
+      const f=w.querySelector('#siphoto').files[0];if(f)photo=await uploadShoppingPhoto(f)
+      const data={household_id:household.id,list_id:w.querySelector('#sil').value,name:w.querySelector('#sin').value.trim(),quantity:w.querySelector('#siq').value.trim()||null,priority_type:w.querySelector('#sip').value,shop:w.querySelector('#sis').value.trim()||null,note:w.querySelector('#sinote').value.trim()||null,photo_path:photo,is_favourite:w.querySelector('#sifav').checked,updated_at:new Date().toISOString()}
+      let r
+      if(id)r=await supabase.from('shopping_items').update(data).eq('id',id)
+      else{data.created_by=session.user.id;r=await supabase.from('shopping_items').insert(data)}
+      if(r.error)throw r.error
+      w.remove();if(active==='shopping')drawShopping()
+    }catch(e){w.querySelector('#sierr').textContent=e.message}
+  }
+}
+async function shoppingListsModal(){
+  const lists=(await supabase.from('shopping_lists').select('*').eq('household_id',household.id).order('sort_order')).data||[]
+  const w=document.createElement('div');w.className='modalWrap'
+  w.innerHTML=`<section class="panel modal"><div class="section-title">Cargo lists</div><div class="listManager">${lists.map(l=>`<div class="listEdit"><span class="colorDot" style="background:${l.color}"></span><input data-lname="${l.id}" value="${E(l.name)}"><input data-lcolor="${l.id}" type="color" value="${l.color}"><button class="tiny" data-ldel="${l.id}">×</button></div>`).join('')}</div><div class="field"><label>New list</label><input id="nln"><input id="nlc" type="color" value="#736787"></div><button id="nladd" class="primary">ADD LIST</button> <button id="nlclose" class="ghost">Done</button><p id="nlerr" class="error"></p></section>`
+  document.body.appendChild(w);w.querySelector('#nlclose').onclick=()=>w.remove()
+  w.querySelector('#nladd').onclick=async()=>{const name=w.querySelector('#nln').value.trim();if(!name)return;const r=await supabase.from('shopping_lists').insert({household_id:household.id,name,color:w.querySelector('#nlc').value,sort_order:lists.length+1,created_by:session.user.id});if(r.error)return w.querySelector('#nlerr').textContent=r.error.message;w.remove();shoppingListsModal()}
+  w.querySelectorAll('[data-lname]').forEach(i=>i.onchange=()=>supabase.from('shopping_lists').update({name:i.value,updated_at:new Date().toISOString()}).eq('id',i.dataset.lname))
+  w.querySelectorAll('[data-lcolor]').forEach(i=>i.onchange=()=>supabase.from('shopping_lists').update({color:i.value,updated_at:new Date().toISOString()}).eq('id',i.dataset.lcolor))
+  w.querySelectorAll('[data-ldel]').forEach(b=>b.onclick=async()=>{if(confirm('Delete this list? Its items will remain under no list.')){await supabase.from('shopping_lists').delete().eq('id',b.dataset.ldel);w.remove();shoppingListsModal()}})
+}
+
 function placeholder(t){app.innerHTML=`<main class="shell">${top(t)}<section class="panel card"><h1 class="pageTitle">${E(t)}</h1><p class="muted">Coming soon.</p></section></main>${nav()}`;wire()}
-function render(){if(active==='bridge')bridge();else if(active==='crew')crew();else if(active==='agenda')agenda();else placeholder(active==='log'?"Captain's Log":active[0].toUpperCase()+active.slice(1))}
-function subscribe(){if(channel)supabase.removeChannel(channel);channel=supabase.channel('bridge-'+household.id).on('postgres_changes',{event:'*',schema:'public',table:'cat_feedings',filter:`household_id=eq.${household.id}`},()=>{if(active==='bridge')loadCats()}).on('postgres_changes',{event:'*',schema:'public',table:'tasks',filter:`household_id=eq.${household.id}`},()=>{if(active==='agenda')drawAgenda();if(active==='bridge')bridgeTasks()}).on('postgres_changes',{event:'*',schema:'public',table:'task_categories',filter:`household_id=eq.${household.id}`},()=>{if(active==='agenda')drawAgenda()}).subscribe()}
-async function boot(){if(!configured)return auth();session=(await supabase.auth.getSession()).data.session;if(session){await userData();if(household){await ensureCategories();subscribe();render()}else onboard()}else auth();supabase.auth.onAuthStateChange(async(_,s)=>{session=s;if(!s){profile=household=null;return auth()}await userData();if(household){await ensureCategories();subscribe();render()}else onboard()})}
+function render(){document.body.classList.remove('shoppingMode');if(active==='bridge')bridge();else if(active==='crew')crew();else if(active==='agenda')agenda();else if(active==='more')more();else if(active==='shopping')shopping();else placeholder(active==='log'?"Captain's Log":active[0].toUpperCase()+active.slice(1))}
+function subscribe(){if(channel)supabase.removeChannel(channel);channel=supabase.channel('bridge-'+household.id).on('postgres_changes',{event:'*',schema:'public',table:'cat_feedings',filter:`household_id=eq.${household.id}`},()=>{if(active==='bridge')loadCats()}).on('postgres_changes',{event:'*',schema:'public',table:'tasks',filter:`household_id=eq.${household.id}`},()=>{if(active==='agenda')drawAgenda();if(active==='bridge')bridgeTasks()}).on('postgres_changes',{event:'*',schema:'public',table:'task_categories',filter:`household_id=eq.${household.id}`},()=>{if(active==='agenda')drawAgenda()})
+.on('postgres_changes',{event:'*',schema:'public',table:'shopping_items',filter:`household_id=eq.${household.id}`},payload=>{
+  if(active==='shopping'){
+    if(payload.eventType==='INSERT' && payload.new.created_by!==session.user.id){
+      const ping=q('#newCargoPing');if(ping){ping.innerHTML=`<div class="freshPing">NEW CARGO REQUEST: ${E(payload.new.name)}</div>`;setTimeout(()=>{if(ping)ping.innerHTML=''},5000)}
+    }
+    drawShopping()
+  }
+})
+.on('postgres_changes',{event:'*',schema:'public',table:'shopping_lists',filter:`household_id=eq.${household.id}`},()=>{if(active==='shopping')shopping()})
+.subscribe()}
+async function boot(){if(!configured)return auth();session=(await supabase.auth.getSession()).data.session;if(session){await userData();if(household){await ensureCategories();await ensureShoppingLists();subscribe();render()}else onboard()}else auth();supabase.auth.onAuthStateChange(async(_,s)=>{session=s;if(!s){profile=household=null;return auth()}await userData();if(household){await ensureCategories();await ensureShoppingLists();subscribe();render()}else onboard()})}
 boot()
