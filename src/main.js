@@ -5,7 +5,16 @@ const app=document.querySelector('#app')
 let session=null,household=null,profile=null,active='bridge',agendaView='today',channel=null
 const E=s=>String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))
 const q=s=>document.querySelector(s),qa=s=>[...document.querySelectorAll(s)]
-const nav=()=>`<nav class="nav">${[['bridge','BRIDGE'],['agenda','AGENDA'],['notes','COMMS'],['more','MORE']].map(([x,label])=>`<button data-tab="${x}" class="${(active===x||(['shopping','treasury','trophy'].includes(active)&&x==='more'))?'active':''}">${label}</button>`).join('')}</nav>`
+const nav=()=>`<nav class="nav">
+  ${[
+    ['bridge','⌂','Bridge'],
+    ['agenda','◷','Agenda'],
+    ['notes','✦','Comms'],
+    ['more','⋯','More']
+  ].map(([x,icon,label])=>`<button data-tab="${x}" class="${(active===x||(['shopping','treasury','trophy'].includes(active)&&x==='more'))?'active':''}" aria-label="${label}">
+    <span class="navIcon">${icon}</span><span class="navLabel">${label}</span>
+  </button>`).join('')}
+</nav>`
 const top=t=>`<header class="top"><div><div class="brand">${E(t||'The Bridge')}</div><div class="muted">${E(household?.name||'')}</div></div><button id="logout" class="ghost">Log out</button></header>`
 function wire(){q('#logout')?.addEventListener('click',()=>supabase.auth.signOut());qa('[data-tab]').forEach(b=>b.onclick=()=>{active=b.dataset.tab;render()})}
 async function userData(){const u=session.user.id;profile=(await supabase.from('profiles').select('*').eq('user_id',u).maybeSingle()).data;const m=(await supabase.from('household_members').select('household_id').eq('user_id',u).limit(1).maybeSingle()).data;household=m?(await supabase.from('households').select('*').eq('id',m.household_id).single()).data:null}
@@ -38,7 +47,7 @@ async function bridge(){
  <section class="panel card ops"><div class="section-title">Upcoming tribute</div><div id="bridgeBills" class="muted">Sweeping financial radar…</div></section>
  <section class="panel card ops bridgeDrugs" id="bridgeDrugs" tabindex="0"><div class="section-title">Take Your Drugs</div><div class="drugBridgeRow"><b id="drugBridgeText">Suspiciously simple by design.</b><span class="muted">Long press to edit</span></div></section>
  </div></main><button id="plus" class="plus">+</button><section id="menu" class="panel menu" hidden><button id="quickNote">NOTE</button><button id="quickTask">TASK</button><button>PLAN</button><button id="quickStuff">STUFF</button><button id="quickMoney">MONEY</button></section>${nav()}`
- wire();q('#plus').onclick=()=>q('#menu').hidden=!q('#menu').hidden;q('#quickTask').onclick=()=>taskModal();q('#quickStuff').onclick=()=>stuffModal();q('#quickMoney').onclick=()=>{active='treasury';render()};q('#quickNote').onclick=()=>noteModal();
+ wire();q('#plus').onclick=()=>q('#menu').hidden=!q('#menu').hidden;q('#quickTask').onclick=()=>taskModal();q('#quickStuff').onclick=()=>stuffModal();q('#quickMoney').onclick=()=>{active='treasury';render()};q('#quickNote').onclick=()=>noteTypeChooser();
  await Promise.all([loadCats(),bridgeTasks(),bridgeBills(),bridgeNotes()])
  wireBridgeDrugs()
 }
@@ -259,6 +268,25 @@ async function crewProfiles(){
   const {data}=await supabase.from('profiles').select('*').in('id',ids)
   return data||[]
 }
+
+async function reactionSummary(noteIds){
+  if(!noteIds?.length)return {}
+  const {data,error}=await supabase.from('note_reactions').select('*').in('note_id',noteIds)
+  if(error){console.error(error);return {}}
+  const out={}
+  for(const r of data||[]){
+    out[r.note_id] ||= {}
+    out[r.note_id][r.reaction] ||= {count:0,mine:false}
+    out[r.note_id][r.reaction].count++
+    if(r.user_id===session.user.id)out[r.note_id][r.reaction].mine=true
+  }
+  return out
+}
+function reactionButton(noteId,reaction,summary,attr='data-breact'){
+  const x=summary?.[noteId]?.[reaction]||{count:0,mine:false}
+  return `<button class="reactionBtn ${x.mine?'reacted':''}" ${attr}="${noteId}" data-r="${E(reaction)}">${E(reaction)}${x.count?` <span class="reactionCount">${x.count}</span>`:''}</button>`
+}
+
 async function bridgeNotes(){
  const box=q('#bridgeNotes');if(!box)return
  try{
@@ -266,12 +294,13 @@ async function bridgeNotes(){
   if(error)throw error
   let mine=(data||[]).filter(n=>!n.recipient_user_id||n.recipient_user_id===session.user.id||n.author_user_id===session.user.id)
   mine=await enrichNoteMedia(mine)
-  box.innerHTML=mine.length?`<div class="bridgeStickyGrid">${mine.slice(0,5).map(bridgeNoteCard).join('')}</div>${mine.length>5?`<button id="moreBridgeNotes" class="ghost notesMore">+${mine.length-5} MORE NOTES</button>`:''}`:'<span class="muted">Empy :(</span>'
+  const reactions=await reactionSummary(mine.map(n=>n.id))
+  box.innerHTML=mine.length?`<div class="bridgeStickyGrid">${mine.slice(0,5).map(n=>bridgeNoteCard(n,reactions)).join('')}</div>${mine.length>5?`<button id="moreBridgeNotes" class="ghost notesMore">+${mine.length-5} MORE NOTES</button>`:''}`:'<span class="muted">Empy :(</span>'
   wireBridgeNotes(mine)
   if(q('#moreBridgeNotes'))q('#moreBridgeNotes').onclick=()=>{active='notes';render()}
  }catch(e){console.error(e);box.textContent='Comms are making a suspicious noise.'}
 }
-function bridgeNoteCard(n){
+function bridgeNoteCard(n,reactions={}){
  const sealed=n.note_type==='for_you'&&n.recipient_user_id===session.user.id&&!n.opened_at
  const txt=contrastText(n.color)
  if(sealed)return `<article class="bridgePaper bridgeEnvelope" tabindex="0" data-bnote="${n.id}" data-sealed="1" style="--paper:${n.color};--paperText:${txt}"><div class="envelopeFlap"></div><div class="envelopeSeal">♥</div><b>${E(pick(sealedLines)(n.author_name_snapshot))}</b><small>from ${E(n.author_name_snapshot)}</small></article>`
@@ -280,7 +309,7 @@ function bridgeNoteCard(n){
  ${n._doodleUrl?`<img src="${E(n._doodleUrl)}" alt="Doodle">`:n._photoUrl?`<img src="${E(n._photoUrl)}" alt="Photo attached to note">`:''}
  ${n.body?`<div class="bridgePaperBody">${E(n.body)}</div>`:''}
  <div class="bridgePaperFrom">— ${E(n.author_name_snapshot)}</div>
- <div class="bridgePaperReactions">${reactionSet.map(r=>`<button class="reactionBtn" data-breact="${n.id}" data-r="${E(r)}">${E(r)}</button>`).join('')}</div>
+ <div class="bridgePaperReactions">${reactionSet.map(r=>reactionButton(n.id,r,reactions,'data-breact')).join('')}</div>
  <div class="bridgeNoteMenu" data-bmenu="${n.id}"></div></article>`
 }
 function wireBridgeNotes(ns){
@@ -300,7 +329,7 @@ function wireBridgeNotes(ns){
 }
 function bridgeMenuHTML(n){
  const own=n.author_user_id===session.user.id
- return `${own?'<button data-act="edit">EDIT</button>':''}<button data-act="pin">${n.pinned?'UNPIN':'PIN THIS BABY'}</button>${n.recipient_user_id===session.user.id?'<button data-act="dismiss">TRANSMISSION RECEIVED</button>':''}<button data-act="hoard">HOARD THIS</button>${n.needs_action&&!n.action_completed_at?'<button data-act="quest">QUEST COMPLETED</button>':''}<button data-act="log">ADD TO CAPTAIN'S LOG</button><button data-act="comments">COMMENTS</button><button data-act="history">HISTORY</button>${own?'<button data-act="destroy">DESTROY</button>':''}`
+ return `${own?'<button data-act="edit">EDIT</button>':''}<button data-act="pin">${n.pinned?'UNPIN':'PIN THIS BABY'}</button>${n.recipient_user_id===session.user.id?'<button data-act="dismiss">TRANSMISSION RECEIVED</button>':''}<button data-act="hoard">HOARD THIS</button>${n.needs_action&&!n.action_completed_at?'<button data-act="quest">QUEST COMPLETED</button>':''}<button data-act="log">ADD TO CAPTAIN'S LOG</button><button data-act="comments">COMMENTS</button><button data-act="history">HISTORY</button><button data-act="destroy">DESTROY</button>`
 }
 function openBridgeMenu(card,n){
  qa('.bridgeNoteMenu.open').forEach(x=>x.classList.remove('open'))
@@ -318,10 +347,11 @@ function openBridgeMenu(card,n){
   if(a==='destroy')return softDeleteNote(n.id)
  }
 }
-function openNoteDetail(n){
+async function openNoteDetail(n){
  const w=document.createElement('div');w.className='modalWrap noteDetailWrap'
  const txt=contrastText(n.color)
- w.innerHTML=`<section class="panel modal noteDetail" style="--paper:${n.color};--paperText:${txt}"><button class="detailClose">×</button><div class="noteTo">${n.recipient_name_snapshot?`TO ${E(n.recipient_name_snapshot)}`:'ON THE BRIDGE'}</div>${n._doodleUrl?`<img class="noteMedia" src="${E(n._doodleUrl)}" alt="Doodle">`:n._photoUrl?`<img class="noteMedia" src="${E(n._photoUrl)}" alt="Photo">`:''}<div class="noteBody">${E(n.body||'')}</div><div class="noteMeta">from ${E(n.author_name_snapshot)} · ${dateText(n.created_at)} ${timeText(n.created_at)}</div><div class="reactionStrip">${reactionSet.map(r=>`<button class="reactionBtn" data-dr="${E(r)}">${E(r)}</button>`).join('')}</div><button id="detailOptions" class="ghost">OPTIONS</button><div class="bridgeNoteMenu" data-bmenu="${n.id}"></div></section>`
+ const rs=await reactionSummary([n.id])
+ w.innerHTML=`<section class="panel modal noteDetail" style="--paper:${n.color};--paperText:${txt}"><button class="detailClose">×</button><div class="noteTo">${n.recipient_name_snapshot?`TO ${E(n.recipient_name_snapshot)}`:'ON THE BRIDGE'}</div>${n._doodleUrl?`<img class="noteMedia" src="${E(n._doodleUrl)}" alt="Doodle">`:n._photoUrl?`<img class="noteMedia" src="${E(n._photoUrl)}" alt="Photo">`:''}<div class="noteBody">${E(n.body||'')}</div><div class="noteMeta">from ${E(n.author_name_snapshot)} · ${dateText(n.created_at)} ${timeText(n.created_at)}</div><div class="reactionStrip">${reactionSet.map(r=>{const x=rs?.[n.id]?.[r]||{count:0,mine:false};return `<button class="reactionBtn ${x.mine?'reacted':''}" data-dr="${E(r)}">${E(r)}${x.count?` <span class="reactionCount">${x.count}</span>`:''}</button>`}).join('')}</div><button id="detailOptions" class="ghost">OPTIONS</button><div class="bridgeNoteMenu" data-bmenu="${n.id}"></div></section>`
  document.body.appendChild(w);w.querySelector('.detailClose').onclick=()=>w.remove()
  w.querySelectorAll('[data-dr]').forEach(b=>b.onclick=()=>reactNote(n.id,b.dataset.dr,n))
  w.querySelector('#detailOptions').onclick=()=>openBridgeMenu(w.querySelector('.noteDetail'),n)
@@ -340,7 +370,7 @@ function wireBridgeDrugs(){
 }
 let notesTab=localStorage.getItem('bridge_notes_tab')||'active'
 async function notes(){
-  app.innerHTML=`<main class="shell">${top('Notes')}<div class="agendaToolbar"><div><h1 class="pageTitle">Notes & Doodles</h1><div class="muted">Household communications of varying strategic importance.</div></div><div><button id="newSticky" class="primary">STICKY</button> <button id="newForYou" class="ghost">FOR YOU</button> <button id="newDoodle" class="ghost">DOODLE</button></div></div>
+  app.innerHTML=`<main class="shell">${top('Notes')}<div class="agendaToolbar"><div><h1 class="pageTitle">Notes & Doodles</h1><div class="muted">Household communications of varying strategic importance.</div></div><div><button id="newSticky" class="primary">GENERAL NOTE</button> <button id="newForYou" class="ghost">FOR YOU</button> <button id="newDoodle" class="ghost">DOODLE</button></div></div>
   <div class="noteFilters"><button data-nt="active" class="${notesTab==='active'?'active':''}">NOTES</button><button data-nt="love" class="${notesTab==='love'?'active':''}">Making loveNOTES</button><button data-nt="bin" class="${notesTab==='bin'?'active':''}">BIN</button></div><section id="notesStage"><div class="panel card muted">Unfolding tiny pieces of paper…</div></section></main>${nav()}`
   wire();q('#newSticky').onclick=()=>noteModal('sticky');q('#newForYou').onclick=()=>noteModal('for_you');q('#newDoodle').onclick=()=>doodleModal()
   qa('[data-nt]').forEach(b=>b.onclick=()=>{notesTab=b.dataset.nt;localStorage.setItem('bridge_notes_tab',notesTab);notes()})
@@ -351,11 +381,12 @@ async function drawNotes(){
   try{
     const {data,error}=await supabase.from('notes').select('*').eq('household_id',household.id).order('created_at',{ascending:false});if(error)throw error
     let ns=await enrichNoteMedia(data||[])
+    const reactions=await reactionSummary(ns.map(n=>n.id))
     if(notesTab==='active')ns=ns.filter(n=>!n.deleted_at&&!n.hoarded_at)
     if(notesTab==='love')ns=ns.filter(n=>!n.deleted_at&&n.hoarded_at)
     if(notesTab==='bin')ns=ns.filter(n=>n.deleted_at)
     const title=notesTab==='love'?'<div class="loveNotesTitle">Making <span class="loveNOTES">loveNOTES</span></div>':notesTab==='bin'?'<div class="section-title">7-day bin</div>':'<div class="section-title">Current transmissions</div>'
-    stage.innerHTML=`<section class="panel card">${title}<div class="noteBoard" style="margin-top:14px">${ns.length?ns.map(noteCard).join(''):`<div class="empty">${notesTab==='love'?'Time to hoard some LOVE':notesTab==='bin'?'The bin is blessedly empty.':'Empy :('}</div>`}</div></section>`
+    stage.innerHTML=`<section class="panel card">${title}<div class="noteBoard" style="margin-top:14px">${ns.length?ns.map(n=>noteCard(n,reactions)).join(''):`<div class="empty">${notesTab==='love'?'Time to hoard some LOVE':notesTab==='bin'?'The bin is blessedly empty.':'Empy :('}</div>`}</div></section>`
     wireNoteCards(ns)
   }catch(e){noteError(e)}
 }
@@ -365,7 +396,7 @@ function expiryWarning(n){
   if(days===7||days===1||days<=0)return `<div class="noteExpiry">${E(days<=1?pick(expiryLines.slice(3)):pick(expiryLines.slice(0,3)))} ${days>0?`${days} day${days===1?'':'s'} remain.`:'Archive it or let it go.'}</div>`
   return ''
 }
-function noteCard(n){
+function noteCard(n,reactions={}){
   const sealed=n.note_type==='for_you'&&n.recipient_user_id===session.user.id&&!n.opened_at
   const noteText=contrastText(n.color)
   if(sealed){
@@ -382,7 +413,7 @@ function noteCard(n){
     ${n.reminder_at?`<div class="noteReminder">Reminder: ${dateText(n.reminder_at)} · ${timeText(n.reminder_at)}</div>`:''}
     ${expiryWarning(n)}
     <div class="noteMeta">from ${E(n.author_name_snapshot)} · ${dateText(n.created_at)} ${timeText(n.created_at)}${new Date(n.updated_at)-new Date(n.created_at)>1000?` · edited at ${timeText(n.updated_at)}`:''}</div>
-    <div class="reactionStrip">${reactionSet.map(r=>`<button class="reactionBtn" data-react="${n.id}" data-r="${E(r)}">${E(r)}</button>`).join('')}</div>
+    <div class="reactionStrip">${reactionSet.map(r=>reactionButton(n.id,r,reactions,'data-react')).join('')}</div>
     <div class="noteHoldHint">Long press or right-click for note options.</div>
     <div class="noteActions" data-noteactions="${n.id}">
       ${!deleted&&editable?`<button data-editnote="${n.id}">EDIT</button>`:''}
@@ -391,7 +422,7 @@ function noteCard(n){
       ${!deleted&&!n.hoarded_at?`<button data-hoard="${n.id}">HOARD THIS</button>`:''}
       ${!deleted&&n.needs_action&&!n.action_completed_at?`<button data-quest="${n.id}">QUEST COMPLETED</button>`:''}
       ${!deleted&&!n.captain_log_saved_at?`<button data-lognote="${n.id}">ADD TO CAPTAIN'S LOG</button>`:''}
-      ${!deleted?`<button data-thread="${n.id}">COMMENTS</button><button data-history="${n.id}">HISTORY</button>${editable?`<button data-destroy="${n.id}">DESTROY</button>`:''}`:`<button data-restore="${n.id}">RESTORE</button><button data-permadelete="${n.id}">DELETE FOREVER</button>`}
+      ${!deleted?`<button data-thread="${n.id}">COMMENTS</button><button data-history="${n.id}">HISTORY</button><button data-destroy="${n.id}">DESTROY</button>`:`<button data-restore="${n.id}">RESTORE</button><button data-permadelete="${n.id}">DELETE FOREVER</button>`}
     </div>
   </article>`
 }
@@ -423,26 +454,82 @@ async function openForYou(id){
   w.querySelector('#oyHoard').onclick=async()=>{await supabase.from('notes').update({hoarded_at:new Date().toISOString(),pinned:false}).eq('id',id);w.remove();toast('Added to Making loveNOTES <3');drawNotes();bridgeNotes()}
   w.querySelector('#oyReceived').onclick=async()=>{await supabase.from('notes').update({dismissed_at:new Date().toISOString(),pinned:false}).eq('id',id);w.remove();drawNotes();bridgeNotes()}
 }
+
+function noteTypeChooser(){
+  const w=document.createElement('div');w.className='modalWrap'
+  w.innerHTML=`<section class="panel modal noteChooser"><div class="section-title">What are we sending?</div>
+    <div class="noteTypeChoices">
+      <button data-choose="sticky"><b>GENERAL NOTE</b><span>Stick something on the Bridge.</span></button>
+      <button data-choose="for_you"><b>FOR YOU</b><span>A sealed little note for the other human.</span></button>
+      <button data-choose="doodle"><b>DOODLE</b><span>Draw them a thing.</span></button>
+    </div>
+    <button id="chooseCancel" class="ghost">Never mind</button>
+  </section>`
+  document.body.appendChild(w)
+  w.querySelector('#chooseCancel').onclick=()=>w.remove()
+  w.querySelectorAll('[data-choose]').forEach(b=>b.onclick=()=>{
+    const t=b.dataset.choose;w.remove()
+    if(t==='doodle')doodleModal();else noteModal(t)
+  })
+}
+
 async function noteModal(type='sticky',id=null){
   const profiles=await crewProfiles(),me=await currentDisplayName(),n=id?(await supabase.from('notes').select('*').eq('id',id).single()).data:null
   if(n&&n.author_user_id!==session.user.id)return toast('Only the author gets to rewrite history. Everyone else gets receipts.')
   type=n?.note_type||type||'sticky'
+  const otherProfiles=profiles.filter(x=>x.id!==session.user.id)
+  const defaultRecipient=type==='for_you'?(n?.recipient_user_id||otherProfiles[0]?.id||''):null
   const w=document.createElement('div');w.className='modalWrap'
-  w.innerHTML=`<section class="panel modal"><div class="section-title">${id?'Edit':'New'} ${type==='for_you'?'For You note':type==='doodle'?'doodle note':'sticky'}</div><form id="nf" class="formGrid"><div class="field full"><label>To</label><select id="nr"><option value="">Both / fridge</option>${profiles.map(x=>{const nm=x.nickname||x.display_name||x.email||'Crew';return `<option value="${x.id}" ${n?.recipient_user_id===x.id?'selected':''}>${E(nm)}</option>`}).join('')}</select></div><div class="field full"><label>Note</label><textarea id="nb" rows="6">${E(n?.body||'')}</textarea></div><div class="field"><label>Colour</label><input id="nc" type="color" value="${n?.color||'#8b526a'}"></div><div class="field"><label><input id="na" type="checkbox" ${n?.needs_action?'checked':''}> Needs action</label></div><div class="field full"><label>Reminder (optional)</label><input id="nrem" type="datetime-local" value="${n?.reminder_at?new Date(n.reminder_at).toISOString().slice(0,16):''}"></div><div class="field full"><label>Photo (optional)</label><input id="nphoto" type="file" accept="image/*"></div><div class="full"><button class="primary">${id?'SAVE':'SEND IT'}</button> <button id="ncancel" type="button" class="ghost">Cancel</button></div><p id="nerr" class="error full"></p></form></section>`
-  document.body.appendChild(w);w.querySelector('#ncancel').onclick=()=>w.remove()
-  w.querySelector('#nf').onsubmit=async e=>{e.preventDefault();const body=w.querySelector('#nb').value.trim(),file=w.querySelector('#nphoto').files[0];if(!body&&!file&&!n?.doodle_path)return w.querySelector('#nerr').textContent=pick(noteEmptyLines)
-    const rid=w.querySelector('#nr').value||null;if(type==='for_you'&&rid===session.user.id)return w.querySelector('#nerr').textContent=pick(selfForYou)
+  w.innerHTML=`<section class="panel modal noteComposer">
+    <div class="composerHead"><div><div class="section-title">${id?'Edit':'New'} ${type==='for_you'?'For You':'General'} note</div><div class="muted">${type==='for_you'?'Sealed until they open it.':'Lives with the other Bridge notes.'}</div></div><button id="ncancel" type="button" class="detailClose">×</button></div>
+    <form id="nf">
+      ${type==='for_you'?`<div class="field"><label>For</label><select id="nr">${otherProfiles.map(x=>{const nm=x.nickname||x.display_name||x.email||'Crew';return `<option value="${x.id}" ${defaultRecipient===x.id?'selected':''}>${E(nm)}</option>`}).join('')}</select></div>`:'<input id="nr" type="hidden" value="">'}
+      <div class="composerNotePreview" id="composerPreview" style="--composerColor:${n?.color||'#8b526a'};--composerText:${contrastText(n?.color||'#8b526a')}">
+        <textarea id="nb" rows="6" placeholder="${type==='for_you'?'Write something for them…':'What do we need to know?'}">${E(n?.body||'')}</textarea>
+      </div>
+      <div class="composerTools">
+        <div class="field compact"><label>Note colour</label><input id="nc" type="color" value="${n?.color||'#8b526a'}"></div>
+        <label class="toggleLine"><input id="na" type="checkbox" ${n?.needs_action?'checked':''}> <span>Needs action</span></label>
+      </div>
+      <details class="composerExtras">
+        <summary>More options</summary>
+        <div class="field"><label>Reminder</label><input id="nrem" type="datetime-local" value="${n?.reminder_at?new Date(n.reminder_at).toISOString().slice(0,16):''}"></div>
+        <div class="field"><label>Photo</label><input id="nphoto" type="file" accept="image/*"></div>
+      </details>
+      <div class="composerFooter"><button class="primary">${id?'SAVE CHANGES':type==='for_you'?'SEAL & SEND':'STICK IT'}</button></div>
+      <p id="nerr" class="error"></p>
+    </form>
+  </section>`
+  document.body.appendChild(w)
+  w.querySelector('#ncancel').onclick=()=>w.remove()
+  const color=w.querySelector('#nc'),preview=w.querySelector('#composerPreview')
+  color.oninput=()=>{preview.style.setProperty('--composerColor',color.value);preview.style.setProperty('--composerText',contrastText(color.value))}
+  w.querySelector('#nf').onsubmit=async e=>{
+    e.preventDefault()
+    const body=w.querySelector('#nb').value.trim(),file=w.querySelector('#nphoto').files[0]
+    if(!body&&!file&&!n?.doodle_path)return w.querySelector('#nerr').textContent=pick(noteEmptyLines)
+    const rid=type==='for_you'?(w.querySelector('#nr').value||null):null
     try{
       const rp=profiles.find(x=>x.id===rid),rname=rp?(rp.nickname||rp.display_name||rp.email||'Crew'):null
       let photo=n?.photo_path||null;if(file)photo=await uploadNoteImage(file)
-      const payload={household_id:household.id,recipient_user_id:rid,recipient_name_snapshot:id?n.recipient_name_snapshot:rname,note_type:type,body,color:w.querySelector('#nc').value,needs_action:w.querySelector('#na').checked,reminder_at:w.querySelector('#nrem').value?new Date(w.querySelector('#nrem').value).toISOString():null,photo_path:photo,updated_at:new Date().toISOString()}
+      const payload={
+        household_id:household.id,
+        recipient_user_id:rid,
+        recipient_name_snapshot:id?n.recipient_name_snapshot:rname,
+        note_type:type,body,color:color.value,
+        needs_action:w.querySelector('#na').checked,
+        reminder_at:w.querySelector('#nrem')?.value?new Date(w.querySelector('#nrem').value).toISOString():null,
+        photo_path:photo,updated_at:new Date().toISOString()
+      }
       if(id){
         await supabase.from('note_versions').insert({household_id:household.id,note_id:n.id,body:n.body,color:n.color,needs_action:n.needs_action,reminder_at:n.reminder_at,photo_path:n.photo_path,doodle_path:n.doodle_path,saved_by:session.user.id})
         const r=await supabase.from('notes').update(payload).eq('id',id);if(r.error)throw r.error
       }else{
-        payload.author_user_id=session.user.id;payload.author_name_snapshot=me;const r=await supabase.from('notes').insert(payload);if(r.error)throw r.error
+        payload.author_user_id=session.user.id;payload.author_name_snapshot=me
+        const r=await supabase.from('notes').insert(payload);if(r.error)throw r.error
       }
-      w.remove();toast(type==='for_you'?'Transmission sent <3':'Note stuck successfully.');if(active==='notes')drawNotes();bridgeNotes()
+      w.remove();toast(type==='for_you'?'Transmission sent <3':'Note stuck successfully.')
+      if(active==='notes')drawNotes();bridgeNotes()
     }catch(err){w.querySelector('#nerr').textContent=pick(noteErrorLines);console.error(err)}
   }
 }
@@ -472,7 +559,10 @@ async function doodleModal(){
 async function reactNote(id,reaction,n){
   if(n?.author_user_id===session.user.id)toast(`${await currentDisplayName()} hurt themself in their own confusion.`)
   const ex=(await supabase.from('note_reactions').select('id').eq('note_id',id).eq('user_id',session.user.id).eq('reaction',reaction).maybeSingle()).data
-  if(ex)await supabase.from('note_reactions').delete().eq('id',ex.id);else await supabase.from('note_reactions').insert({household_id:household.id,note_id:id,user_id:session.user.id,reaction})
+  if(ex)await supabase.from('note_reactions').delete().eq('id',ex.id)
+  else await supabase.from('note_reactions').insert({household_id:household.id,note_id:id,user_id:session.user.id,reaction})
+  if(active==='notes')drawNotes()
+  if(active==='bridge')bridgeNotes()
 }
 async function noteThreadModal(id){
   const w=document.createElement('div');w.className='modalWrap';w.innerHTML=`<section class="panel modal"><div class="section-title">Comment thread</div><div id="threadBody">Loading gossip…</div><div class="field"><label>Reply</label><textarea id="reply"></textarea></div><button id="replySend" class="primary">SEND</button> <button id="threadClose" class="ghost">Done</button></section>`;document.body.appendChild(w)
