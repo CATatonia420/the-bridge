@@ -495,3 +495,31 @@ body::before{
   .themeChoices{width:100%}
   .themeChoice{flex:1}
 }
+
+
+/* ===== v0.7.5 cat record editing + Cargo nav ===== */
+.nav{grid-template-columns:repeat(5,1fr)}
+.feedingEditor{max-width:560px}
+.feedingStatuses{margin:14px 0}
+.feedingStatuses button.selected{
+  background:var(--accent);
+  color:#07080a;
+  border-color:var(--accent);
+  box-shadow:0 0 16px var(--accent-glow);
+  font-weight:950;
+}
+.feedingFooter{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+.feedingFooter .primary{flex:1}
+.bowl .stamp{
+  max-width:100%;
+  white-space:normal;
+  line-height:1.2;
+  overflow-wrap:anywhere;
+}
+@media(max-width:560px){
+  .nav{gap:3px;padding:5px}
+  .nav button{min-width:0;padding:4px 2px}
+  .navLabel{font-size:.64rem}
+  .navIcon{font-size:1.1rem}
+  .feedingFooter{display:grid;grid-template-columns:1fr}
+}

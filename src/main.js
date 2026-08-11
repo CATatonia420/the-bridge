@@ -51,8 +51,9 @@ const nav=()=>`<nav class="nav hubNav">
     ['bridge','⌂','Bridge'],
     ['agenda','◷','Agenda'],
     ['notes','✦','Comms'],
+    ['shopping','▣','Cargo'],
     ['more','•••','More']
-  ].map(([x,icon,label])=>`<button data-tab="${x}" class="${(active===x||(['shopping','treasury','trophy','log'].includes(active)&&x==='more'))?'active':''}" aria-label="${label}">
+  ].map(([x,icon,label])=>`<button data-tab="${x}" class="${(active===x||(['treasury','trophy','log'].includes(active)&&x==='more'))?'active':''}" aria-label="${label}">
     <span class="navIcon">${icon}</span><span class="navLabel">${label}</span>
   </button>`).join('')}
 </nav>`
@@ -123,9 +124,94 @@ async function loadHubWidget(){
   }catch(e){box.innerHTML='<span class="muted">Widget is pretending not to know anything.</span>'}
 }
 async function bridgeTasks(){const box=q('#todayTasks');if(!box)return;const today=dateKey(new Date()),{data}=await supabase.from('tasks').select('*').eq('household_id',household.id).eq('status','needs_doing').order('due_at');const list=(data||[]).filter(t=>t.due_at&&dateKey(t.due_at)===today);box.innerHTML=list.length?list.slice(0,5).map(t=>`<div class="row"><span>${E(t.title)}</span><span>${t.all_day?'TODAY':timeText(t.due_at)}</span></div>`).join(''):'No disasters currently detected. Probably.'}
-async function loadCats(){const box=q('#cats'),hb=q('#hunger');if(!box)return;try{const cr=await supabase.from('cats').select('*,cat_feeding_schedules(*)').eq('household_id',household.id).order('name');if(cr.error)throw cr.error;const fr=await supabase.from('cat_feedings').select('*').eq('household_id',household.id).eq('feeding_date',dateKey(new Date())).order('recorded_at',{ascending:false});if(fr.error)throw fr.error;const fs=fr.data||[],users=[...new Set(fs.map(x=>x.recorded_by))],names={};if(users.length){for(const p of (await supabase.from('profiles').select('user_id,display_name').in('user_id',users)).data||[])names[p.user_id]=p.display_name}const now=new Date(),mins=now.getHours()*60+now.getMinutes();let lateAny=false;box.innerHTML=(cr.data||[]).map(c=>`<article class="cat"><div class="catname">${E(c.name)}</div><div class="muted">${E(c.breed)}</div><div class="bowls">${(c.cat_feeding_schedules||[]).sort((a,b)=>a.feeding_time.localeCompare(b.feeding_time)).map(s=>{const f=fs.find(x=>x.cat_id===c.id&&x.schedule_id===s.id),[h,m]=s.feeding_time.split(':').map(Number),late=!f&&mins>h*60+m+60;if(late)lateAny=true;return`<button class="bowl ${f?f.status:late?'overdue':''}" data-cat="${c.id}" data-sch="${s.id}" data-time="${s.feeding_time.slice(0,5)}">${s.feeding_time.slice(0,5)}<br>${f?f.status.toUpperCase():late?'HUNGRY':'○'}${f?`<div class="stamp">${E(names[f.recorded_by]||'Crew')} · ${timeText(f.recorded_at)}</div>`:''}</button>`}).join('')}</div></article>`).join('');hb.innerHTML=lateAny?'<div class="alert">THE CHILDREN HUNGER. THIS IS NOT A DRILL.</div>':'';qa('.bowl').forEach(b=>b.onclick=()=>feedModal(b.dataset.cat,b.dataset.sch,b.dataset.time))}catch(e){box.innerHTML=`<div class="error">FELINE SCANNER MALFUNCTION: ${E(e.message)}</div>`}}
-function feedModal(cat,sch,time){const w=document.createElement('div');w.className='modalWrap';w.innerHTML=`<section class="panel modal"><div class="section-title">Feeding report · ${E(time)}</div><div class="statusBtns"><button data-s="fed">FED</button><button data-s="partial">PARTIAL</button><button data-s="refused">REFUSED</button><button data-s="other">OTHER</button></div><div class="field"><label>Optional note</label><textarea id="fn"></textarea></div><button id="cancel" class="ghost">Cancel</button><p id="fe" class="error"></p></section>`;document.body.appendChild(w);w.querySelector('#cancel').onclick=()=>w.remove();w.querySelectorAll('[data-s]').forEach(b=>b.onclick=async()=>{const r=await supabase.from('cat_feedings').insert({household_id:household.id,cat_id:cat,schedule_id:sch,feeding_date:dateKey(new Date()),status:b.dataset.s,note:w.querySelector('#fn').value||null,recorded_by:session.user.id});if(r.error)return w.querySelector('#fe').textContent=r.error.message;w.remove();loadCats()})}
+async function loadCats(){
+ const box=q('#cats'),hb=q('#hunger');if(!box)return
+ try{
+  const cr=await supabase.from('cats').select('*,cat_feeding_schedules(*)').eq('household_id',household.id).order('name')
+  if(cr.error)throw cr.error
+  const fr=await supabase.from('cat_feedings').select('*').eq('household_id',household.id).eq('feeding_date',dateKey(new Date())).order('recorded_at',{ascending:false})
+  if(fr.error)throw fr.error
+  const fs=fr.data||[],users=[...new Set(fs.map(x=>x.recorded_by).filter(Boolean))],names={}
+  if(users.length){
+    for(const p of (await supabase.from('profiles').select('user_id,display_name').in('user_id',users)).data||[])names[p.user_id]=p.display_name
+  }
+  const now=new Date(),mins=now.getHours()*60+now.getMinutes();let lateAny=false
+  box.innerHTML=(cr.data||[]).map(c=>`<article class="cat"><div class="catname">${E(c.name)}</div><div class="muted">${E(c.breed)}</div><div class="bowls">${(c.cat_feeding_schedules||[]).sort((a,b)=>a.feeding_time.localeCompare(b.feeding_time)).map(s=>{
+    const f=fs.find(x=>x.cat_id===c.id&&x.schedule_id===s.id),[h,m]=s.feeding_time.split(':').map(Number),late=!f&&mins>h*60+m+60
+    if(late)lateAny=true
+    const noteFlag=f?.note?`<div class="stamp">NOTE: ${E(f.note.length>34?f.note.slice(0,34)+'…':f.note)}</div>`:''
+    return `<button class="bowl ${f?f.status:late?'overdue':''}" data-cat="${c.id}" data-sch="${s.id}" data-time="${s.feeding_time.slice(0,5)}" data-feeding="${f?.id||''}">
+      ${s.feeding_time.slice(0,5)}<br>${f?f.status.toUpperCase():late?'HUNGRY':'○'}
+      ${f?`<div class="stamp">${E(names[f.recorded_by]||'Crew')} · ${timeText(f.recorded_at)}</div>${noteFlag}`:''}
+    </button>`
+  }).join('')}</div></article>`).join('')
+  hb.innerHTML=lateAny?'<div class="alert">THE CHILDREN HUNGER. THIS IS NOT A DRILL.</div>':''
+  qa('.bowl').forEach(b=>b.onclick=()=>feedModal(b.dataset.cat,b.dataset.sch,b.dataset.time,b.dataset.feeding||null))
+ }catch(e){box.innerHTML=`<div class="error">FELINE SCANNER MALFUNCTION: ${E(e.message)}</div>`}
+}
+async function feedModal(cat,sch,time,feedingId=null){
+  let existing=null
+  if(feedingId){
+    const r=await supabase.from('cat_feedings').select('*').eq('id',feedingId).single()
+    if(r.error)return toast('The feeding record has wandered off.')
+    existing=r.data
+  }else{
+    const r=await supabase.from('cat_feedings').select('*').eq('household_id',household.id).eq('cat_id',cat).eq('schedule_id',sch).eq('feeding_date',dateKey(new Date())).maybeSingle()
+    if(!r.error&&r.data)existing=r.data
+  }
 
+  const w=document.createElement('div');w.className='modalWrap'
+  w.innerHTML=`<section class="panel modal feedingEditor">
+    <div class="section-title">${existing?'Edit feeding record':'Feeding report'} · ${E(time)}</div>
+    ${existing?`<div class="muted">Already recorded. You can change the status or add/edit the note afterwards.</div>`:''}
+    <div class="statusBtns feedingStatuses">
+      ${['fed','partial','refused','other'].map(s=>`<button type="button" data-s="${s}" class="${existing?.status===s?'selected':''}">${s.toUpperCase()}</button>`).join('')}
+    </div>
+    <div class="field"><label>Note</label><textarea id="fn" rows="4" placeholder="Anything worth remembering?">${E(existing?.note||'')}</textarea></div>
+    <div class="feedingFooter">
+      <button id="saveFeeding" class="primary">${existing?'SAVE CHANGES':'RECORD IT'}</button>
+      <button id="cancel" class="ghost">Cancel</button>
+    </div>
+    <p id="fe" class="error"></p>
+  </section>`
+  document.body.appendChild(w)
+
+  let chosen=existing?.status||null
+  const statusBtns=[...w.querySelectorAll('[data-s]')]
+  statusBtns.forEach(b=>b.onclick=()=>{
+    chosen=b.dataset.s
+    statusBtns.forEach(x=>x.classList.toggle('selected',x===b))
+  })
+
+  w.querySelector('#cancel').onclick=()=>w.remove()
+  w.querySelector('#saveFeeding').onclick=async()=>{
+    const note=w.querySelector('#fn').value.trim()||null
+    if(!chosen)return w.querySelector('#fe').textContent='Pick what actually happened first, captain.'
+    let r
+    if(existing){
+      r=await supabase.from('cat_feedings').update({
+        status:chosen,
+        note,
+        recorded_by:session.user.id,
+        recorded_at:new Date().toISOString()
+      }).eq('id',existing.id)
+    }else{
+      r=await supabase.from('cat_feedings').insert({
+        household_id:household.id,
+        cat_id:cat,
+        schedule_id:sch,
+        feeding_date:dateKey(new Date()),
+        status:chosen,
+        note,
+        recorded_by:session.user.id
+      })
+    }
+    if(r.error)return w.querySelector('#fe').textContent=r.error.message
+    w.remove()
+    toast(existing?(note?'Feeding record updated. The lore expands.':'Feeding record updated.'):'Feline tribute recorded.')
+    loadCats()
+  }
+}
 async function crew(){app.innerHTML=`<main class="shell">${top('Crew')}<section class="panel invite"><div class="section-title">Household invite code</div><div class="code">${E(household.invite_code)}</div></section><h1 class="pageTitle">Crew Manifest</h1><div id="cg" class="crewgrid"></div></main>${nav()}`;wire();const ms=(await supabase.from('household_members').select('user_id').eq('household_id',household.id)).data||[],ids=ms.map(x=>x.user_id),ps=ids.length?(await supabase.from('profiles').select('*').in('user_id',ids)).data||[]:[],cs=(await supabase.from('cats').select('*').eq('household_id',household.id)).data||[];q('#cg').innerHTML=[...ps.map(p=>`<article class="panel crewcard"><div class="crewhead"><div class="avatar">${E((p.display_name||'?')[0])}</div><div><div class="crewname">${E(p.display_name)}</div><div class="muted">${E(p.nickname||'Human')}</div></div></div></article>`),...cs.map(c=>`<article class="panel crewcard"><div class="crewname">${E(c.name)}</div><div class="muted">${E(c.breed)}</div></article>`)].join('')}
 
 async function agenda(){
@@ -158,12 +244,11 @@ async function more(){
     <div class="themeChoices"><button id="themeC" class="themeChoice ${profile?.ui_theme!=='J'?'selected':''}" data-theme-choice="C"><span class="themeSwatch cSwatch"></span><b>C</b></button><button id="themeJ" class="themeChoice ${profile?.ui_theme==='J'?'selected':''}" data-theme-choice="J"><span class="themeSwatch jSwatch"></span><b>J</b></button></div>
   </section>
   <div class="moreGrid" style="margin-top:12px">
-    <section id="openShopping" class="panel moduleCard"><div class="moduleGlyph">▣</div><div class="section-title">Cargo</div><h2>Shopping</h2><p class="muted">The manifest.</p></section>
     <section id="openTreasury" class="panel moduleCard"><div class="moduleGlyph">◈</div><div class="section-title">Treasury</div><h2>Bills & Debt</h2><p class="muted">Tribute and dwindling horrors.</p></section>
     <section id="openLog" class="panel moduleCard"><div class="moduleGlyph">⌁</div><div class="section-title">Archives</div><h2>Captain's Log</h2><p class="muted">Permanent household lore.</p></section>
     <section class="panel moduleCard"><div class="moduleGlyph">❄</div><div class="section-title">Cold Storage</div><h2>Freezer</h2><p class="muted">Coming next.</p></section>
   </div></main>${nav()}`
-  wire();q('#openShopping').onclick=()=>go('shopping');q('#openTreasury').onclick=()=>go('treasury');q('#openLog').onclick=()=>go('log');qa('[data-theme-choice]').forEach(b=>b.onclick=()=>setTheme(b.dataset.themeChoice))
+  wire();q('#openTreasury').onclick=()=>go('treasury');q('#openLog').onclick=()=>go('log');qa('[data-theme-choice]').forEach(b=>b.onclick=()=>setTheme(b.dataset.themeChoice))
 }
 async function shopping(){
   await ensureShoppingLists()
