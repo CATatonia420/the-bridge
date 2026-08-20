@@ -467,8 +467,18 @@ async function ensureShoppingLists(){
 }
 async function more(){
   app.innerHTML=`<main class="shell">${top('More')}<div class="moreHead"><span class="systemTag">SECONDARY SYSTEMS</span><h1 class="pageTitle">More</h1></div>
-  <section class="themeDeck panel card"><div><div class="section-title">Your console</div><div class="muted">Theme follows your profile across devices.</div></div>
-    <div class="themeChoices"><button id="themeC" class="themeChoice ${profile?.ui_theme!=='J'?'selected':''}" data-theme-choice="C"><span class="themeSwatch cSwatch"></span><b>C</b></button><button id="themeJ" class="themeChoice ${profile?.ui_theme==='J'?'selected':''}" data-theme-choice="J"><span class="themeSwatch jSwatch"></span><b>J</b></button></div>
+  <section class="panel card consoleCard">
+    <div class="section-title">Your console</div>
+    <div class="muted">${E(profile?.display_name||'Crew')}${profile?.nickname?` · “${E(profile.nickname)}”`:''}</div>
+    <form id="profileForm" class="formGrid">
+      <div class="field"><label>Display name</label><input id="pfName" value="${E(profile?.display_name||'')}" required></div>
+      <div class="field"><label>Nickname</label><input id="pfNick" placeholder="what the crew calls you" value="${E(profile?.nickname||'')}"></div>
+      <div class="full"><button class="primary">SAVE PROFILE</button></div>
+      <p id="pfErr" class="error full"></p>
+    </form>
+    <div class="themeDeck"><div><div class="section-title">Theme</div><div class="muted">Theme follows your profile across devices.</div></div>
+      <div class="themeChoices"><button id="themeC" class="themeChoice ${profile?.ui_theme!=='J'?'selected':''}" data-theme-choice="C"><span class="themeSwatch cSwatch"></span><b>C</b></button><button id="themeJ" class="themeChoice ${profile?.ui_theme==='J'?'selected':''}" data-theme-choice="J"><span class="themeSwatch jSwatch"></span><b>J</b></button></div>
+    </div>
   </section>
   <div class="moreGrid" style="margin-top:12px">
     <section id="openTreasury" class="panel moduleCard"><div class="moduleGlyph">◈</div><div class="section-title">Treasury</div><h2>Bills & Debt</h2><p class="muted">Tribute and dwindling horrors.</p></section>
@@ -476,6 +486,15 @@ async function more(){
     <section class="panel moduleCard"><div class="moduleGlyph">❄</div><div class="section-title">Cold Storage</div><h2>Freezer</h2><p class="muted">Coming next.</p></section>
   </div></main>${nav()}`
   wire();q('#openTreasury').onclick=()=>go('treasury');q('#openLog').onclick=()=>go('log');qa('[data-theme-choice]').forEach(b=>b.onclick=()=>setTheme(b.dataset.themeChoice))
+  q('#profileForm').onsubmit=async e=>{
+    e.preventDefault()
+    const dn=q('#pfName').value.trim(),nn=q('#pfNick').value.trim()||null
+    if(!dn)return q('#pfErr').textContent='You need a display name, captain.'
+    const r=await supabase.from('profiles').update({display_name:dn,nickname:nn}).eq('user_id',session.user.id)
+    if(r.error)return q('#pfErr').textContent=r.error.message
+    profile={...profile,display_name:dn,nickname:nn}
+    toast('Profile updated.');more()
+  }
 }
 async function shopping(){
   await ensureShoppingLists()
@@ -656,7 +675,7 @@ const noteErrorLines=['Something has gone tits up in Comms.','a fucky-wucky seem
 const reactionSet=['♥','HAHA','FUCK U','CAT','SUS','KISS']
 
 async function currentDisplayName(){
-  const {data}=await supabase.from('profiles').select('*').eq('id',session.user.id).maybeSingle()
+  const {data}=await supabase.from('profiles').select('*').eq('user_id',session.user.id).maybeSingle()
   return data?.nickname||data?.display_name||session.user.email?.split('@')[0]||'Crew'
 }
 async function crewProfiles(){

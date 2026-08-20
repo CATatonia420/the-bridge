@@ -587,3 +587,8 @@ body::before{
  .doseRow{grid-template-columns:auto 1fr}
  .doseRight{grid-column:1/-1}
 }
+
+/* ===== v0.8 — editable profile (More > Your console) ===== */
+.consoleCard{max-width:660px}
+.consoleCard .themeDeck{margin-top:14px;padding-top:14px;border-top:1px solid #30363a}
+@media(max-width:520px){.consoleCard .themeDeck{display:grid}}
