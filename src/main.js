@@ -864,9 +864,9 @@ async function bridgeNotes(){
  }catch(e){console.error(e);box.textContent='Comms are making a suspicious noise.'}
 }
 function bridgeNoteCard(n,reactions={}){
- const sealed=n.note_type==='for_you'&&n.recipient_user_id===session.user.id&&!n.opened_at
+ const sealed=n.note_type==='for_you'&&!n.opened_at
  const txt=contrastText(n.color)
- if(sealed)return `<article class="bridgePaper bridgeEnvelope" tabindex="0" data-bnote="${n.id}" data-sealed="1" style="--paper:${n.color};--paperText:${txt}"><div class="envelopeFlap"></div><div class="envelopeSeal">♥</div><b>${E(pick(sealedLines)(n.author_name_snapshot))}</b><small>from ${E(n.author_name_snapshot)}</small></article>`
+ if(sealed){const isAuthor=n.author_user_id===session.user.id;return `<article class="bridgePaper bridgeEnvelope" tabindex="0" data-bnote="${n.id}" data-sealed="1" style="--paper:${n.color};--paperText:${txt}"><div class="envelopeFlap"></div><div class="envelopeSeal">♥</div><b>${isAuthor?`SEALED FOR ${E(n.recipient_name_snapshot||'THEM')}`:E(pick(sealedLines)(n.author_name_snapshot))}</b><small>${isAuthor?'waiting for them to open it':`from ${E(n.author_name_snapshot)}`}</small></article>`}
  return `<article class="bridgePaper ${n.note_type==='doodle'?'bridgeDoodle':'bridgeSticky'}" tabindex="0" data-bnote="${n.id}" style="--paper:${n.color};--paperText:${txt}">
  <div class="bridgePaperTo">${n.recipient_name_snapshot?`TO ${E(n.recipient_name_snapshot)}`:'ON THE BRIDGE'}</div>
  ${n._doodleUrl?`<img src="${E(n._doodleUrl)}" alt="Doodle">`:n._photoUrl?`<img src="${E(n._photoUrl)}" alt="Photo attached to note">`:''}
@@ -957,11 +957,13 @@ function expiryWarning(n){
   return ''
 }
 function noteCard(n,reactions={}){
-  const sealed=n.note_type==='for_you'&&n.recipient_user_id===session.user.id&&!n.opened_at
+  const sealed=n.note_type==='for_you'&&!n.opened_at
   const noteText=contrastText(n.color)
   if(sealed){
-    const f=pick(sealedLines)
-    return `<article class="sticky sealedNote sealedEnv" tabindex="0" style="--note-color:${n.color};--note-text:${noteText}" data-open="${n.id}"><div class="envFlap"></div><div class="envSeal">♥</div><div class="sealedCopy">${E(f(n.author_name_snapshot))}</div><div class="noteMeta">SEALED · ${E(n.author_name_snapshot)} · ${dateText(n.created_at)}</div></article>`
+    const isAuthor=n.author_user_id===session.user.id
+    const copy=isAuthor?`SEALED · awaiting ${n.recipient_name_snapshot||'them'}`:pick(sealedLines)(n.author_name_snapshot)
+    const meta=isAuthor?`TO ${E(n.recipient_name_snapshot||'them')} · ${dateText(n.created_at)}`:`SEALED · ${E(n.author_name_snapshot)} · ${dateText(n.created_at)}`
+    return `<article class="sticky sealedNote sealedEnv" tabindex="0" style="--note-color:${n.color};--note-text:${noteText}" data-open="${n.id}"><div class="envFlap"></div><div class="envSeal">♥</div><div class="sealedCopy">${E(copy)}</div><div class="noteMeta">${meta}</div></article>`
   }
   const editable=n.author_user_id===session.user.id
   const deleted=!!n.deleted_at
@@ -1007,8 +1009,17 @@ function wireNoteCards(ns){
 }
 async function openForYou(id){
   const n=(await supabase.from('notes').select('*').eq('id',id).single()).data;if(!n)return
-  await supabase.from('notes').update({opened_at:new Date().toISOString(),updated_at:new Date().toISOString()}).eq('id',id)
   const photoUrl=await signedNoteMedia(n.photo_path),doodleUrl=await signedNoteMedia(n.doodle_path),noteText=contrastText(n.color)
+  if(n.author_user_id===session.user.id&&!n.opened_at){
+    const w=document.createElement('div');w.className='modalWrap'
+    w.innerHTML=`<section class="panel modal sealReveal" style="background:${n.color};color:${noteText}"><div class="section-title">STILL SEALED</div><div class="noteMeta" style="opacity:.9">Your transmission is sealed for ${E(n.recipient_name_snapshot||'them')} until they open it.</div><div class="noteBody">${E(n.body||'')}</div>${photoUrl?`<img class="noteMedia" src="${E(photoUrl)}" alt="Photo attached to note">`:''}${doodleUrl?`<img class="noteMedia" src="${E(doodleUrl)}" alt="Doodle attached to note">`:''}<div class="noteActions open"><button id="oyEdit">EDIT</button><button id="oyDestroy">TEAR IT UP</button><button id="oyClose">OK</button></div></section>`
+    document.body.appendChild(w)
+    w.querySelector('#oyClose').onclick=()=>w.remove()
+    w.querySelector('#oyEdit').onclick=()=>{w.remove();noteModal(null,id)}
+    w.querySelector('#oyDestroy').onclick=async()=>{w.remove();softDeleteNote(id)}
+    return
+  }
+  await supabase.from('notes').update({opened_at:new Date().toISOString(),updated_at:new Date().toISOString()}).eq('id',id)
   const w=document.createElement('div');w.className='modalWrap';w.innerHTML=`<section class="panel modal sealReveal" style="background:${n.color};color:${noteText}"><div class="section-title">${E(pick(openedLines))}</div><div class="noteBody">${E(n.body||'')}</div>${photoUrl?`<img class="noteMedia" src="${E(photoUrl)}" alt="Photo attached to note">`:''}${doodleUrl?`<img class="noteMedia" src="${E(doodleUrl)}" alt="Doodle attached to note">`:''}<div class="noteMeta">from ${E(n.author_name_snapshot)}</div><div class="noteActions open"><button id="oyPin">PIN THIS BABY</button><button id="oyHoard">HOARD THIS</button><button id="oyReceived">TRANSMISSION RECEIVED</button></div></section>`;document.body.appendChild(w)
   w.querySelector('#oyPin').onclick=async()=>{await supabase.from('notes').update({pinned:true,dismissed_at:null}).eq('id',id);w.remove();drawNotes();bridgeNotes()}
   w.querySelector('#oyHoard').onclick=async()=>{await supabase.from('notes').update({hoarded_at:new Date().toISOString(),pinned:false}).eq('id',id);w.remove();toast('Added to Making loveNOTES <3');drawNotes();bridgeNotes()}
@@ -1051,10 +1062,15 @@ async function noteModal(type='sticky',id=null){
         <div class="field compact"><label>Note colour</label><input id="nc" type="color" value="${n?.color||'#8b526a'}"></div>
         <label class="toggleLine"><input id="na" type="checkbox" ${n?.needs_action?'checked':''}> <span>Needs action</span></label>
       </div>
+      <div class="composerMedia">
+        <input id="nphoto" type="file" accept="image/*" hidden>
+        <button id="nphotoBtn" type="button" class="ghost">📷 PHOTO</button>
+        <button id="ndoodleBtn" type="button" class="ghost">✏ DOODLE</button>
+      </div>
+      <div id="mediaPreview" class="mediaPreview"></div>
       <details class="composerExtras">
         <summary>More options</summary>
         <div class="field"><label>Reminder</label><input id="nrem" type="datetime-local" value="${n?.reminder_at?new Date(n.reminder_at).toISOString().slice(0,16):''}"></div>
-        <div class="field"><label>Photo</label><input id="nphoto" type="file" accept="image/*"></div>
       </details>
       <div class="composerFooter"><button class="primary">${id?'SAVE CHANGES':type==='for_you'?'SEAL & SEND':'STICK IT'}</button></div>
       <p id="nerr" class="error"></p>
@@ -1064,14 +1080,23 @@ async function noteModal(type='sticky',id=null){
   w.querySelector('#ncancel').onclick=()=>w.remove()
   const color=w.querySelector('#nc'),preview=w.querySelector('#composerPreview')
   color.oninput=()=>{preview.style.setProperty('--composerColor',color.value);preview.style.setProperty('--composerText',contrastText(color.value))}
+  let attachedPhoto=null,attachedDoodle=n?.doodle_path||null
+  const photoInput=w.querySelector('#nphoto'),mediaPrev=w.querySelector('#mediaPreview')
+  const showMedia=html=>{mediaPrev.innerHTML=html}
+  const showExisting=()=>{const ex=n?.doodle_path?n.doodle_path:n?.photo_path;if(ex)signedNoteMedia(ex).then(u=>{if(u)showMedia(`<img src="${E(u)}" alt="Attached">`)})}
+  showExisting()
+  w.querySelector('#nphotoBtn').onclick=()=>photoInput.click()
+  photoInput.onchange=()=>{const f=photoInput.files[0];if(!f)return;attachedPhoto=f;showMedia(`<img src="${URL.createObjectURL(f)}" alt="Photo"><button class="tiny" id="rmMedia" type="button">×</button>`)}
+  w.querySelector('#ndoodleBtn').onclick=()=>doodleModal({attach:true,onDone:async path=>{attachedDoodle=path;const u=await signedNoteMedia(path);showMedia(`<img src="${E(u)}" alt="Doodle"><button class="tiny" id="rmMedia" type="button">×</button>`)}})
+  mediaPrev.addEventListener('click',e=>{if(e.target.id!=='rmMedia')return;attachedPhoto=null;attachedDoodle=n?.doodle_path||null;mediaPrev.innerHTML='';showExisting()})
   w.querySelector('#nf').onsubmit=async e=>{
     e.preventDefault()
-    const body=w.querySelector('#nb').value.trim(),file=w.querySelector('#nphoto').files[0]
-    if(!body&&!file&&!n?.doodle_path)return w.querySelector('#nerr').textContent=pick(noteEmptyLines)
+    const body=w.querySelector('#nb').value.trim()
+    if(!body&&!attachedPhoto&&!attachedDoodle)return w.querySelector('#nerr').textContent=pick(noteEmptyLines)
     const rid=type==='for_you'?(w.querySelector('#nr').value||null):null
     try{
       const rp=profiles.find(x=>x.user_id===rid),rname=rp?(rp.nickname||rp.display_name||rp.email||'Crew'):null
-      let photo=n?.photo_path||null;if(file)photo=await uploadNoteImage(file)
+      let photo=n?.photo_path||null;if(attachedPhoto)photo=await uploadNoteImage(attachedPhoto)
       const payload={
         household_id:household.id,
         recipient_user_id:rid,
@@ -1079,7 +1104,7 @@ async function noteModal(type='sticky',id=null){
         note_type:type,body,color:color.value,
         needs_action:w.querySelector('#na').checked,
         reminder_at:w.querySelector('#nrem')?.value?new Date(w.querySelector('#nrem').value).toISOString():null,
-        photo_path:photo,updated_at:new Date().toISOString()
+        photo_path:photo,doodle_path:attachedDoodle,updated_at:new Date().toISOString()
       }
       if(id){
         await supabase.from('note_versions').insert({household_id:household.id,note_id:n.id,body:n.body,color:n.color,needs_action:n.needs_action,reminder_at:n.reminder_at,photo_path:n.photo_path,doodle_path:n.doodle_path,saved_by:session.user.id})
@@ -1099,8 +1124,8 @@ async function compressImage(file,max=1280,quality=.72){
 async function uploadNoteImage(file){
   const blob=await compressImage(file),path=`${household.id}/${session.user.id}/${Date.now()}.jpg`;const r=await supabase.storage.from('note-media').upload(path,blob,{contentType:'image/jpeg'});if(r.error)throw r.error;return path
 }
-async function doodleModal(){
-  const w=document.createElement('div');w.className='modalWrap';w.innerHTML=`<section class="panel modal"><div class="section-title">Doodle transmission</div><div class="canvasTools"><label>Photo underlay <input id="dphoto" type="file" accept="image/*"></label><label>Pen <input id="dsize" type="range" min="2" max="24" value="5"></label><button id="derase" class="ghost">ERASER</button><button id="dundo" class="ghost">UNDO</button></div><div id="dpal" class="palettePanels"></div><canvas id="dc" class="doodleCanvas"></canvas><div class="field"><label>Caption</label><input id="dcap"></div><button id="dsend" class="primary">SEND DOODLE</button> <button id="dcancel" class="ghost">Cancel</button><p id="derr" class="error"></p></section>`;document.body.appendChild(w)
+async function doodleModal(cfg={}){
+  const w=document.createElement('div');w.className='modalWrap';w.innerHTML=`<section class="panel modal"><div class="section-title">${cfg.attach?'Doodle for the note':'Doodle transmission'}</div><div class="canvasTools"><label>Photo underlay <input id="dphoto" type="file" accept="image/*"></label><label>Pen <input id="dsize" type="range" min="2" max="24" value="5"></label><button id="derase" class="ghost">ERASER</button><button id="dundo" class="ghost">UNDO</button></div><div id="dpal" class="palettePanels"></div><canvas id="dc" class="doodleCanvas"></canvas>${cfg.attach?'':`<div class="field"><label>Caption</label><input id="dcap"></div>`}<button id="dsend" class="primary">${cfg.attach?'ATTACH DOODLE':'SEND DOODLE'}</button> <button id="dcancel" class="ghost">Cancel</button><p id="derr" class="error"></p></section>`;document.body.appendChild(w)
   const c=w.querySelector('#dc'),ctx=c.getContext('2d'),palette=['#ffffff','#ff416d','#ff8fb0','#62a978','#8bc7ff','#ffd65a','#b68cff','#111111'];let col=palette[0],drawing=false,last=null,history=[]
   function sizeCanvas(){const r=c.getBoundingClientRect();c.width=Math.max(600,Math.round(r.width*devicePixelRatio));c.height=Math.round(r.height*devicePixelRatio);ctx.scale(devicePixelRatio,devicePixelRatio)}
   sizeCanvas();w.querySelector('#dpal').innerHTML=palette.map((x,i)=>`<button class="palettePanel ${i===0?'selected':''}" style="background:${x}" data-col="${x}"></button>`).join('')
@@ -1112,8 +1137,11 @@ async function doodleModal(){
   w.querySelector('#dundo').onclick=()=>{const x=history.pop();if(!x)return;const im=new Image();im.onload=()=>{ctx.clearRect(0,0,c.width,c.height);ctx.drawImage(im,0,0,c.width/devicePixelRatio,c.height/devicePixelRatio)};im.src=x}
   w.querySelector('#dphoto').onchange=e=>{const f=e.target.files[0];if(!f)return;const im=new Image();im.onload=()=>{history.push(c.toDataURL());ctx.drawImage(im,0,0,c.width/devicePixelRatio,c.height/devicePixelRatio)};im.src=URL.createObjectURL(f)}
   w.querySelector('#dcancel').onclick=()=>w.remove()
-  w.querySelector('#dsend').onclick=async()=>{if(!history.length&&!w.querySelector('#dcap').value.trim())return w.querySelector('#derr').textContent=pick(['The canvas has achieved enlightenment: absolutely nothing is on it.','You drew the invisible man. Try again.','Scanners detect no doodle. The pen union is furious.'])
-    try{const blob=await new Promise(r=>c.toBlob(r,'image/png')),path=`${household.id}/${session.user.id}/${Date.now()}-doodle.png`;const ur=await supabase.storage.from('note-media').upload(path,blob,{contentType:'image/png'});if(ur.error)throw ur.error;const me=await currentDisplayName();const r=await supabase.from('notes').insert({household_id:household.id,author_user_id:session.user.id,author_name_snapshot:me,note_type:'doodle',body:w.querySelector('#dcap').value.trim()||null,doodle_path:path,color:'#242126'});if(r.error)throw r.error;w.remove();toast('Doodle deployed.');if(active==='notes')drawNotes();bridgeNotes()}catch(e){w.querySelector('#derr').textContent=pick(noteErrorLines)}
+  w.querySelector('#dsend').onclick=async()=>{const cap=w.querySelector('#dcap')?.value.trim()||'';if(!history.length&&!cap)return w.querySelector('#derr').textContent=pick(['The canvas has achieved enlightenment: absolutely nothing is on it.','You drew the invisible man. Try again.','Scanners detect no doodle. The pen union is furious.'])
+    try{const blob=await new Promise(r=>c.toBlob(r,'image/png')),path=`${household.id}/${session.user.id}/${Date.now()}-doodle.png`;const ur=await supabase.storage.from('note-media').upload(path,blob,{contentType:'image/png'});if(ur.error)throw ur.error
+      w.remove()
+      if(cfg.onDone)return cfg.onDone(path)
+      const me=await currentDisplayName();const r=await supabase.from('notes').insert({household_id:household.id,author_user_id:session.user.id,author_name_snapshot:me,note_type:'doodle',body:cap||null,doodle_path:path,color:'#242126'});if(r.error)throw r.error;toast('Doodle deployed.');if(active==='notes')drawNotes();bridgeNotes()}catch(e){w.querySelector('#derr').textContent=pick(noteErrorLines)}
   }
 }
 async function reactNote(id,reaction,n){

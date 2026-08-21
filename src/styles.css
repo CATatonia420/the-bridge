@@ -662,3 +662,9 @@ body::before{
 .sealReveal{animation:sealReveal .45s ease-out}
 @keyframes sealReveal{from{transform:scale(.92) rotate(-1deg);opacity:0}to{transform:scale(1) rotate(0);opacity:1}}
 @media (prefers-reduced-motion:reduce){.sealedEnv .envSeal,.bridgeEnvelope .envelopeSeal,.sealReveal{animation:none}}
+
+/* ===== v0.9 — composer media (photo + doodle attach) ===== */
+.composerMedia{display:flex;gap:8px;margin:12px 0}
+.composerMedia button{flex:0 0 auto}
+.mediaPreview{display:flex;gap:8px;align-items:center;margin:0 0 12px;flex-wrap:wrap}
+.mediaPreview img{width:68px;height:68px;object-fit:cover;border-radius:8px;border:1px solid #ffffff35;background:#09090b}
