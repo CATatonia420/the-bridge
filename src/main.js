@@ -80,231 +80,6 @@ const dateText=x=>x?new Date(x).toLocaleDateString('en-IE',{day:'numeric',month:
 const timeText=x=>x?new Date(x).toLocaleTimeString('en-IE',{hour:'2-digit',minute:'2-digit'}):''
 function overdue(t){if(!t.due_at||t.status==='done')return'';const h=(Date.now()-new Date(t.due_at))/36e5;if(h<=0)return'';if(h<6)return'<div class="over1">Temporal hiccup detected.</div>';if(h<24)return'<div class="over2">This has become mildly embarrassing.</div>';if(h<72)return'<div class="over3">TEMPORAL ANOMALY DETECTED.</div>';return'<div class="over4">WE HAVE ABANDONED THE TIMELINE.</div>'}
 
-/* ===== v0.8 Sick Bay ===== */
-const sbAccent=()=>document.documentElement.dataset.bridgeTheme==='J'?'#5f9a75':'#ef466f'
-const sbHM=s=>{const[h,m]=s.split(':').map(Number);return h*60+m}
-let sbRerender=null
-function avatarSVG(id,pct,color,accent){
- const f=n=>Number(n).toFixed(1)
- function cap(x1,y1,x2,y2,w1,w2){const dx=x2-x1,dy=y2-y1,len=Math.hypot(dx,dy),ux=dx/len,uy=dy/len,px=-uy,py=ux,h1=w1/2,h2=w2/2,a1=[x1+px*h1,y1+py*h1],a2=[x1-px*h1,y1-py*h1],b1=[x2+px*h2,y2+py*h2],b2=[x2-px*h2,y2-py*h2];return`M${f(a1[0])} ${f(a1[1])} L${f(b1[0])} ${f(b1[1])} A${f(h2)} ${f(h2)} 0 0 0 ${f(b2[0])} ${f(b2[1])} L${f(a2[0])} ${f(a2[1])} A${f(h1)} ${f(h1)} 0 0 1 ${f(a1[0])} ${f(a1[1])} Z`}
- const head=`<ellipse cx="60" cy="20" rx="12.5" ry="14"/>`,neck=cap(60,33,60,41,8.5,8.5),torso='M43 44 Q42 64 48 86 L72 86 Q78 64 77 44 Q60 40 43 44 Z'
- const armL=cap(45,47,35,90,13,8),armR=cap(75,47,85,90,13,8),legL=cap(51,88,52,142,15,8.5),legR=cap(69,88,68,142,15,8.5),footL=cap(53,143,58,150,9,9),footR=cap(67,143,62,150,9,9)
- const fillY=(150-130*pct).toFixed(1)
- return `<svg class="ava" viewBox="0 0 120 160" role="img" aria-label="${Math.round(pct*100)}% health fill">
- <defs>
-  <radialGradient id="${id}-bg" cx="50%" cy="50%" r="50%"><stop offset="0%" stop-color="${accent}" stop-opacity="0.30"/><stop offset="100%" stop-color="${accent}" stop-opacity="0"/></radialGradient>
-  <linearGradient id="${id}-body" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="${accent}" stop-opacity="0.16"/><stop offset="70%" stop-color="${accent}" stop-opacity="0.06"/><stop offset="100%" stop-color="${accent}" stop-opacity="0.03"/></linearGradient>
-  <linearGradient id="${id}-fill" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="${color}" stop-opacity="0.5"/><stop offset="100%" stop-color="${color}" stop-opacity="0.9"/></linearGradient>
-  <filter id="${id}-glow" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="2.4" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
-  <clipPath id="${id}-clip">${head}<path d="${neck}"/><path d="${torso}"/><path d="${armL}"/><path d="${armR}"/><path d="${legL}"/><path d="${legR}"/><path d="${footL}"/><path d="${footR}"/></clipPath>
- </defs>
- <circle cx="60" cy="80" r="54" fill="url(#${id}-bg)"/>
- <g opacity="0.3" fill="none" stroke="${accent}" stroke-width="0.8" stroke-dasharray="3 7"><ellipse cx="60" cy="80" rx="46" ry="62"><animateTransform attributeName="transform" attributeType="XML" type="rotate" from="0 60 80" to="360 60 80" dur="40s" repeatCount="indefinite"/></ellipse></g>
- <ellipse cx="60" cy="150" rx="27" ry="4.5" fill="${accent}" opacity="0.06" stroke="${accent}" stroke-width="0.8" opacity="0.5"/><ellipse cx="60" cy="150" rx="17" ry="2.8" fill="none" stroke="${accent}" stroke-width="0.9" opacity="0.7"/>
- <g clip-path="url(#${id}-clip)"><rect x="0" y="${fillY}" width="120" height="${160-fillY}" fill="url(#${id}-fill)"/><line x1="18" y1="${fillY}" x2="102" y2="${fillY}" stroke="#ffffff" stroke-width="2" opacity="0.95" filter="url(#${id}-glow)"/></g>
- <g fill="url(#${id}-body)" stroke="${accent}" stroke-width="1.3" stroke-linejoin="round"><path d="${legL}"/><path d="${legR}"/><path d="${footL}"/><path d="${footR}"/><path d="${armL}"/><path d="${armR}"/><path d="${torso}"/><path d="${neck}"/>${head}</g>
- <g fill="none" stroke="${accent}" stroke-linecap="round" filter="url(#${id}-glow)">
-  <path d="M51 18 L56 19" stroke-width="2.4"><animate attributeName="opacity" values="1;.5;1" dur="2.6s" repeatCount="indefinite"/></path>
-  <path d="M69 18 L64 19" stroke-width="2.4"><animate attributeName="opacity" values="1;.5;1" dur="2.6s" repeatCount="indefinite"/></path>
-  <path d="M57 26 Q60 28.5 63 26" stroke-width="1.8" opacity="0.85"/>
- </g>
- <line x1="24" y1="18" x2="96" y2="18" stroke="${accent}" stroke-width="1" opacity="0.4"><animate attributeName="y1" values="16;148;16" dur="4.5s" repeatCount="indefinite"/><animate attributeName="y2" values="16;148;16" dur="4.5s" repeatCount="indefinite"/><animate attributeName="opacity" values="0.05;0.4;0.05" dur="4.5s" repeatCount="indefinite"/></line>
- <g fill="${accent}">
-  <circle cx="40" cy="46" r="1"><animate attributeName="cy" values="46;32;46" dur="4s" repeatCount="indefinite"/><animate attributeName="opacity" values="0.8;0.1;0.8" dur="4s" repeatCount="indefinite"/></circle>
-  <circle cx="82" cy="66" r="1.1"><animate attributeName="cy" values="66;50;66" dur="5s" begin="1.2s" repeatCount="indefinite"/><animate attributeName="opacity" values="0.8;0.1;0.8" dur="5s" begin="1.2s" repeatCount="indefinite"/></circle>
-  <circle cx="46" cy="92" r="1"><animate attributeName="cy" values="92;78;92" dur="4.6s" begin="2.1s" repeatCount="indefinite"/><animate attributeName="opacity" values="0.7;0.1;0.7" dur="4.6s" begin="2.1s" repeatCount="indefinite"/></circle>
-  <circle cx="76" cy="114" r="1.1"><animate attributeName="cy" values="114;100;114" dur="5.4s" begin="0.7s" repeatCount="indefinite"/><animate attributeName="opacity" values="0.7;0.1;0.7" dur="5.4s" begin="0.7s" repeatCount="indefinite"/></circle>
- </g>
- <g stroke="${accent}" stroke-width="1.6" opacity="0.9"><line x1="4" y1="6" x2="4" y2="18"/><line x1="4" y1="6" x2="16" y2="6"/><line x1="116" y1="6" x2="116" y2="18"/><line x1="116" y1="6" x2="104" y2="6"/><line x1="4" y1="154" x2="4" y2="142"/><line x1="4" y1="154" x2="16" y2="154"/><line x1="116" y1="154" x2="116" y2="142"/><line x1="116" y1="154" x2="104" y2="154"/></g>
- </svg>`
-}
-function medDay(meds,logs,now){
- const today=dateKey(now),mins=now.getHours()*60+now.getMinutes()
- let expected=0,taken=0,overdue=0,lateTaken=0;const slots=[]
- for(const m of meds){
-  if(m.med_type==='as_needed')continue
-  if(m.med_type==='course'){
-   if(m.prescribed_since&&today<m.prescribed_since)continue
-   if(m.course_ends_at&&today>m.course_ends_at)continue
-  }
-  const sch=(m.medication_schedules||[]).slice().sort((a,b)=>(a.sort_order??0)-(b.sort_order??0))
-  const list=sch.length?sch:[{id:null,dose_time:null}]
-  for(const s of list){
-   expected++
-   const lg=logs.find(l=>l.medication_id===m.id&&l.schedule_id===s.id)
-   let state
-   if(lg)state=s.dose_time&&(new Date(lg.taken_at).getHours()*60+new Date(lg.taken_at).getMinutes())>sbHM(s.dose_time)+15?'late':'taken'
-   else state=s.dose_time&&mins>sbHM(s.dose_time)+15?'overdue':'due'
-   if(state==='taken')taken++
-   else if(state==='late'){taken++;lateTaken++}
-   else if(state==='overdue')overdue++
-   slots.push({med:m,schedule:s,log:lg,state})
-  }
- }
- let status
- if(overdue>0||lateTaken>0)status={cls:'sbCritical',label:'CRITICAL',color:'#ff3b5c'}
- else if(expected>0&&taken===expected)status={cls:'sbOptimal',label:'OPTIMAL',color:'#3fe58b'}
- else if(expected===0)status={cls:'sbNone',label:'NO DAILY MEDS',color:'#6d7680'}
- else status={cls:'sbOntrack',label:'ON TRACK',color:'#ffb020'}
- return{expected,taken,overdue,lateTaken,status,pct:expected?taken/expected:0,slots}
-}
-async function loadSickBay(){
- const box=q('#sickBay');if(!box)return
- try{
-  const today=dateKey(new Date())
-  const [mr,lr,membersR]=await Promise.all([
-   supabase.from('medications').select('*,medication_schedules(*)').eq('household_id',household.id).order('sort_order'),
-   supabase.from('medication_logs').select('*').eq('household_id',household.id).eq('log_date',today),
-   supabase.from('household_members').select('user_id').eq('household_id',household.id)
-  ])
-  if(mr.error)throw mr.error
-  const ids=(membersR.data||[]).map(x=>x.user_id)
-  const profs=ids.length?(await supabase.from('profiles').select('user_id,display_name,nickname').in('user_id',ids)).data||[]:[]
-  const meds=mr.data||[],logs=lr.data||[]
-  box.innerHTML='<div class="crewRow">'+profs.map(p=>{
-   const mine=meds.filter(m=>m.user_id===p.user_id),day=medDay(mine,logs,new Date()),name=p.nickname||p.display_name||'Crew'
-   let sub
-   if(day.status.cls==='sbCritical')sub=`${day.overdue} late${day.lateTaken?` · ${day.lateTaken} taken late`:''}`
-   else if(day.status.cls==='sbOptimal')sub=`${day.taken}/${day.expected} · all clear`
-   else if(day.status.cls==='sbOntrack')sub=`${day.taken}/${day.expected} · ${day.expected-day.taken} still ahead`
-   else sub='no daily meds logged'
-   return `<button class="crewCard" data-sbuser="${p.user_id}" type="button" aria-label="Open ${E(name)}'s health overview"><div class="avaFrame ${day.status.cls==='sbCritical'?'critical':''}">${avatarSVG('sb'+p.user_id,day.pct,day.status.color,sbAccent())}</div><div class="crewMeta"><div class="crewName">${E(name)}</div><span class="chip ${day.status.cls}">${day.status.label}</span><div class="crewSub">${E(sub)}</div></div></button>`
-  }).join('')+'</div>'
-  qa('[data-sbuser]').forEach(b=>b.onclick=()=>openHealthOverview(b.dataset.sbuser))
- }catch(e){box.innerHTML=`<div class="error">SICK BAY MALFUNCTION: ${E(e.message)}</div>`}
-}
-async function takeDose(medId,scheduleId){
- const r=await supabase.from('medication_logs').insert({household_id:household.id,medication_id:medId,schedule_id:scheduleId||null,log_date:dateKey(new Date()),taken_by:session.user.id})
- if(r.error)return toast('Sick Bay error.')
- toast('Dose logged ✓');if(active==='bridge')loadSickBay();sbRerender?.()
-}
-async function undoTaken(medId,scheduleId){
- if(!confirm('Undo this dose?'))return
- const r=await supabase.from('medication_logs').delete().eq('medication_id',medId).eq('schedule_id',scheduleId||null).eq('log_date',dateKey(new Date()))
- if(r.error)return toast('Sick Bay error.')
- toast('Dose undone.');if(active==='bridge')loadSickBay();sbRerender?.()
-}
-async function openHealthOverview(userId){
- const w=document.createElement('div');w.className='modalWrap'
- w.innerHTML=`<section class="panel modal sickBayModal"><div id="sbBody"><div class="muted">Loading vitals…</div></div></section>`
- document.body.appendChild(w)
- const close=()=>{sbRerender=null;w.remove()}
- w.addEventListener('click',e=>{if(e.target===w)close()})
- async function render(){
-  try{
-   const today=dateKey(new Date())
-   const [mr,lr,or,membersR]=await Promise.all([
-    supabase.from('medications').select('*,medication_schedules(*)').eq('household_id',household.id).eq('user_id',userId).order('sort_order'),
-    supabase.from('medication_logs').select('*').eq('household_id',household.id).eq('log_date',today),
-    supabase.from('health_observations').select('*').eq('household_id',household.id).eq('subject_user_id',userId).order('created_at',{ascending:false}),
-    supabase.from('household_members').select('user_id').eq('household_id',household.id)
-   ])
-   if(mr.error)throw mr.error
-   const meds=mr.data||[],logs=lr.data||[],obs=or.data||[]
-   const ids=(membersR.data||[]).map(x=>x.user_id)
-   const profs=ids.length?(await supabase.from('profiles').select('user_id,display_name,nickname').in('user_id',ids)).data||[]:[]
-   const nameOf=id=>{const p=profs.find(x=>x.user_id===id);return p?(p.nickname||p.display_name||'Crew'):'Crew'}
-   const me=profs.find(x=>x.user_id===userId),name=me?(me.nickname||me.display_name||'Crew'):'Crew'
-   const day=medDay(meds,logs,new Date())
-   const asNeeded=[]
-   for(const m of meds.filter(x=>x.med_type==='as_needed')){
-    const last=await supabase.from('medication_logs').select('*').eq('medication_id',m.id).order('taken_at',{ascending:false}).limit(1)
-    asNeeded.push({m,last:last.data?.[0]||null})
-   }
-   const doseHTML=day.slots.map(s=>{
-    const label=s.schedule?.dose_time?`<span class="doseTime">${E(s.schedule.dose_time)}</span>`:`<span class="anytime">any time today</span>`
-    const right=s.state==='taken'?`<span class="stamp ok">✓ ${E(nameOf(s.log.taken_by))} · ${timeText(s.log.taken_at)}</span><button class="takeBtn undoBtn" data-undo="${s.med.id}" data-sched="${s.schedule?.id||''}" type="button">UNDO</button>`
-     :s.state==='late'?`<span class="stamp bad">TAKEN LATE · ${timeText(s.log.taken_at)}</span>`
-     :s.state==='overdue'?`<span class="stamp bad">OVERDUE · was due ${E(s.schedule?.dose_time||'')}</span><button class="takeBtn" data-take="${s.med.id}" data-sched="${s.schedule?.id||''}" type="button">TAKE</button>`
-     :`<span class="stamp warn">due ${E(s.schedule?.dose_time||'today')}</span><button class="takeBtn" data-take="${s.med.id}" data-sched="${s.schedule?.id||''}" type="button">TAKE</button>`
-    return `<div class="doseRow ${s.state}"><span class="doseDot"></span><div class="doseInfo"><b>${E(s.med.name)}</b>${label}</div><div class="doseRight">${right}</div></div>`
-   }).join('')
-   const prnHTML=asNeeded.map(({m,last})=>`<div class="doseRow"><span class="doseDot" style="background:#8a7bb5;box-shadow:0 0 9px #8a7bb5"></span><div class="doseInfo"><b>${E(m.name)}</b><span class="doseTime">${E(m.what_for||'')}</span></div><div class="doseRight"><span class="stamp" style="color:#d9cdf5">${last?`last ${dateText(last.taken_at)}`:'never taken'}</span><button class="takeBtn" data-take="${m.id}" data-sched="" type="button">TAKE NOW</button></div></div>`).join('')
-   const medHTML=meds.map(m=>{
-    const sch=m.medication_schedules||[],times=sch.filter(s=>s.dose_time).map(s=>s.dose_time)
-    const schedText=m.med_type==='as_needed'?'as needed · no deadline':times.length?`set time${times.length>1?'s':''} · ${times.join(' & ')}`:'any time today'
-    return `<details class="medCard"><summary><div class="medSummary"><b>${E(m.name)}</b><span class="chip ${m.med_type==='regular'?'reg':m.med_type==='course'?'course':'prn'}">${E(m.med_type.toUpperCase().replace('_',' '))}</span><div class="medSub">${E(m.what_for||'')}${m.prescribed_since?` · since ${E(m.prescribed_since)}`:''}${m.course_ends_at?` · ends ${E(m.course_ends_at)}`:''}</div></div></summary><div class="medDetail">
-     <div class="kv"><span>SCHEDULE</span>${E(schedText)}</div>
-     ${m.brand?`<div class="kv"><span>BRAND</span>${E(m.brand)}</div>`:''}
-     ${m.packaging?`<div class="kv"><span>PACKAGING</span>${E(m.packaging)}</div>`:''}
-     ${m.side_effects?`<div class="kv"><span>SIDE EFFECTS</span>${E(m.side_effects)}</div>`:''}
-     ${m.cost?`<div class="kv"><span>COST</span>${E(m.cost)}</div>`:''}
-     ${m.notes?`<div class="kv"><span>NOTES</span>${E(m.notes)}</div>`:''}
-     ${m.reminder_minutes?`<div class="kv"><span>REMINDER</span>${E(m.reminder_minutes)} min before (in-app now, push later)</div>`:''}
-     <div class="medActions"><button class="tiny" data-editmed="${m.id}" type="button">EDIT</button><button class="tiny" data-delmed="${m.id}" type="button">×</button></div>
-    </div></details>`
-   }).join('')
-   const obsHTML=obs.length?obs.map(o=>`<div class="obsItem"><div>${E(o.body)}</div><div class="obsMeta">${E(nameOf(o.author_user_id))} · ${dateText(o.created_at)} ${timeText(o.created_at)}</div></div>`).join(''):'<div class="muted">No observations yet. How are they, actually?</div>'
-   w.querySelector('#sbBody').innerHTML=`<div class="sbOvHead"><div class="avaFrame ${day.status.cls==='sbCritical'?'critical':''}">${avatarSVG('sbov'+userId,day.pct,day.status.color,sbAccent())}</div><div><div class="sbOvTitle">${E(name)}</div><div class="sbOvSub">Health overview · <span class="chip ${day.status.cls}">${day.status.label}</span></div></div><button class="sbClose" type="button" aria-label="Close">×</button></div>
-    <div class="section-title">Today's doses</div>${doseHTML||'<div class="muted">Nothing due today.</div>'}
-    ${prnHTML?`<div class="section-title">As needed</div>${prnHTML}`:''}
-    <div class="section-title">Medications</div>${medHTML||'<div class="muted">No medications on record.</div>'}<button class="plusMed" type="button" style="margin-top:8px">+ ADD MEDICATION</button>
-    <div class="section-title">Observations</div>${obsHTML}<div class="obsAdd"><input id="obsInput" placeholder="bad sleep, good mood, ate too much cheese, got a bruise…"><button id="obsAdd" type="button">LOG</button></div>`
-   w.querySelector('.sbClose').onclick=close
-   w.querySelector('.plusMed').onclick=()=>medModal()
-   w.querySelector('#obsAdd').onclick=async()=>{
-    const v=w.querySelector('#obsInput').value.trim();if(!v)return
-    const r=await supabase.from('health_observations').insert({household_id:household.id,subject_user_id:userId,author_user_id:session.user.id,body:v})
-    if(r.error)return toast('Sick Bay error.')
-    toast('Observation logged ✓');render()
-   }
-   w.querySelectorAll('[data-take]').forEach(b=>b.onclick=()=>takeDose(b.dataset.take,b.dataset.sched))
-   w.querySelectorAll('[data-undo]').forEach(b=>b.onclick=()=>undoTaken(b.dataset.undo,b.dataset.sched))
-   w.querySelectorAll('[data-editmed]').forEach(b=>b.onclick=()=>medModal(b.dataset.editmed))
-   w.querySelectorAll('[data-delmed]').forEach(b=>b.onclick=async()=>{if(!confirm('Remove this medication from the Sick Bay?'))return;const r=await supabase.from('medications').delete().eq('id',b.dataset.delmed);if(r.error)return toast('Sick Bay error.');toast('Removed.');render();loadSickBay()})
-  }catch(e){w.querySelector('#sbBody').innerHTML=`<div class="error">${E(e.message)}</div>`}
- }
- sbRerender=render
- await render()
-}
-async function medModal(id=null){
- const members=(await supabase.from('household_members').select('user_id').eq('household_id',household.id)).data||[]
- const ids=members.map(x=>x.user_id)
- const profs=ids.length?(await supabase.from('profiles').select('user_id,display_name,nickname').in('user_id',ids)).data||[]:[]
- const m=id?(await supabase.from('medications').select('*,medication_schedules(*)').eq('id',id).single()).data:null
- const times=(m?.medication_schedules||[]).filter(s=>s.dose_time).map(s=>s.dose_time).join(', ')
- const w=document.createElement('div');w.className='modalWrap'
- w.innerHTML=`<section class="panel modal sickBayModal"><div class="section-title">${m?'Edit medication':'Add medication'}</div><form id="medf" class="formGrid">
-  <div class="field full"><label>Medication</label><input id="mName" required value="${E(m?.name||'')}"></div>
-  <div class="field"><label>Who takes it</label><select id="mWho">${profs.map(p=>`<option value="${p.user_id}" ${m?.user_id===p.user_id?'selected':''}>${E(p.nickname||p.display_name||'Crew')}</option>`).join('')}</select></div>
-  <div class="field"><label>Type</label><select id="mType"><option value="regular" ${(!m||m.med_type==='regular')?'selected':''}>Regular</option><option value="as_needed" ${m?.med_type==='as_needed'?'selected':''}>As needed</option><option value="course" ${m?.med_type==='course'?'selected':''}>Course</option></select></div>
-  <div class="field full"><label>What it's for</label><input id="mFor" value="${E(m?.what_for||'')}"></div>
-  <div class="field"><label>Prescribed since</label><input id="mSince" type="date" value="${E(m?.prescribed_since||'')}"></div>
-  <div class="field" id="mEndsWrap"><label>Course ends</label><input id="mEnds" type="date" value="${E(m?.course_ends_at||'')}"></div>
-  <div class="field full" id="mTimesWrap"><label>Dose times (24h, comma separated)</label><input id="mTimes" placeholder="08:00, 21:00 — leave blank for any time today" value="${E(times)}"></div>
-  <div class="field"><label>Brand</label><input id="mBrand" value="${E(m?.brand||'')}"></div>
-  <div class="field"><label>Packaging</label><input id="mPack" value="${E(m?.packaging||'')}"></div>
-  <div class="field full"><label>Side effects</label><textarea id="mSide">${E(m?.side_effects||'')}</textarea></div>
-  <div class="field full"><label>Notes</label><textarea id="mNotes">${E(m?.notes||'')}</textarea></div>
-  <div class="field"><label>Cost</label><input id="mCost" placeholder="€9.20 / month" value="${E(m?.cost||'')}"></div>
-  <div class="field"><label>Remind (minutes before)</label><input id="mRemind" type="number" min="0" value="${m?.reminder_minutes??''}"></div>
-  <div class="full"><button class="primary">${m?'SAVE CHANGES':'ADD TO CABINET'}</button> <button id="medCancel" type="button" class="ghost">Cancel</button></div><p id="medErr" class="error full"></p></form></section>`
- document.body.appendChild(w)
- w.querySelector('#medCancel').onclick=()=>w.remove()
- const typeSel=w.querySelector('#mType')
- const syncType=()=>{const t=typeSel.value;w.querySelector('#mTimesWrap').style.display=t==='as_needed'?'none':'';w.querySelector('#mEndsWrap').style.display=t==='course'?'':'none'}
- typeSel.onchange=syncType;syncType()
- w.querySelector('#medf').onsubmit=async e=>{
-  e.preventDefault()
-  const name=w.querySelector('#mName').value.trim(),who=w.querySelector('#mWho').value,type=typeSel.value
-  if(!name)return
-  let schedTimes=[]
-  if(type!=='as_needed'){
-   const raw=w.querySelector('#mTimes').value.trim()
-   if(raw){schedTimes=raw.split(/[\s,]+/).filter(Boolean);for(const t of schedTimes)if(!/^([01]?\d|2[0-3]):[0-5]\d$/.test(t))return w.querySelector('#medErr').textContent=`"${E(t)}" is not a valid time. Use HH:MM like 08:00.`;schedTimes.sort()}
-  }
-  const payload={household_id:household.id,user_id:who,name,what_for:w.querySelector('#mFor').value.trim()||null,med_type:type,prescribed_since:w.querySelector('#mSince').value||null,course_ends_at:type==='course'?(w.querySelector('#mEnds').value||null):null,brand:w.querySelector('#mBrand').value.trim()||null,packaging:w.querySelector('#mPack').value.trim()||null,side_effects:w.querySelector('#mSide').value.trim()||null,notes:w.querySelector('#mNotes').value.trim()||null,cost:w.querySelector('#mCost').value.trim()||null,reminder_minutes:w.querySelector('#mRemind').value===''?null:Number(w.querySelector('#mRemind').value)}
-  try{
-   let medId=id
-   if(id){const r=await supabase.from('medications').update(payload).eq('id',id);if(r.error)throw r.error;await supabase.from('medication_schedules').delete().eq('medication_id',id)}
-   else{payload.sort_order=(await supabase.from('medications').select('id').eq('household_id',household.id)).data?.length||0;payload.created_by=session.user.id;const r=await supabase.from('medications').insert(payload).select().single();if(r.error)throw r.error;medId=r.data.id}
-   const slots=type==='as_needed'?[]:(schedTimes.length?schedTimes:[null]).map((t,i)=>({household_id:household.id,medication_id:medId,dose_time:t,sort_order:i}))
-   if(slots.length){const r=await supabase.from('medication_schedules').insert(slots);if(r.error)throw r.error}
-   w.remove();toast(id?'Medication updated.':'Added to the Sick Bay.');if(active==='bridge')loadSickBay();sbRerender?.()
-  }catch(err){w.querySelector('#medErr').textContent=err.message}
- }
-}
-
 async function bridge(){
  app.innerHTML=`<main class="shell hubShell">${top()}
  <section class="hubStatus panel">
@@ -313,24 +88,24 @@ async function bridge(){
  </section>
  <div id="hunger"></div>
  <section class="hubLayout">
-   <section class="hubPanel sickBayConsole"><div class="hubPanelHead"><span>01</span><b>SICK BAY</b><small>MEDICAL LOG</small><button id="manageMeds" class="tiny sickBayManage" type="button">+ MED</button></div><div id="sickBay" class="sickBayBody"><span class="muted">Checking vitals…</span></div></section>
-   <section class="hubPanel catConsole"><div class="hubPanelHead"><span>02</span><b>THE CHILDREN</b><small>FELINE LIFE SUPPORT</small></div><div id="cats" class="catrow compactCats">Scanning…</div></section>
-   <section class="hubPanel todayConsole"><div class="hubPanelHead"><span>03</span><b>TODAY</b><small>ACTIVE TIMELINE</small></div><div id="todayTasks" class="timelineConsole muted">Consulting the timeline…</div></section>
-   <section class="hubPanel commsConsole"><div class="hubPanelHead clickableHead" id="openCommsHub"><span>04</span><b>COMMS</b><small>NOTICE DECK</small></div><div id="bridgeNotes" class="bridgeNotes"><span class="muted">Checking the post-its…</span></div></section>
-   <section class="hubPanel systemsConsole"><div class="hubPanelHead"><span>05</span><b>SYSTEMS</b><small>LOW-LEVEL NOISE</small></div>
+   <section class="hubPanel catConsole"><div class="hubPanelHead"><span>01</span><b>THE CHILDREN</b><small>FELINE LIFE SUPPORT</small></div><div id="cats" class="catrow compactCats">Scanning…</div></section>
+   <section class="hubPanel todayConsole"><div class="hubPanelHead"><span>02</span><b>TODAY</b><small>ACTIVE TIMELINE</small></div><div id="todayTasks" class="timelineConsole muted">Consulting the timeline…</div></section>
+   <section class="hubPanel commsConsole"><div class="hubPanelHead clickableHead" id="openCommsHub"><span>03</span><b>COMMS</b><small>NOTICE DECK</small></div><div id="bridgeNotes" class="bridgeNotes"><span class="muted">Checking the post-its…</span></div></section>
+   <section class="hubPanel systemsConsole"><div class="hubPanelHead"><span>04</span><b>SYSTEMS</b><small>LOW-LEVEL NOISE</small></div>
       <div class="systemTiles">
+        <button class="systemTile" id="bridgeDrugs" type="button"><span class="tileLamp"></span><b>DRUGS</b><small id="drugBridgeText">Suspiciously simple.</small></button>
         <button class="systemTile" id="openTreasuryHub" type="button"><span class="tileLamp"></span><b>TREASURY</b><small id="bridgeBills">Sweeping radar…</small></button>
         <button class="systemTile" id="openCargoHub" type="button"><span class="tileLamp"></span><b>CARGO</b><small>Shopping manifest</small></button>
       </div>
    </section>
  </section>
- </main><button id="plus" class="plus hubPlus">+</button><section id="menu" class="panel menu" hidden><button id="quickNote">NOTE</button><button id="quickTask">TASK</button><button id="quickStuff">STUFF</button><button id="quickMoney">MONEY</button></section>${nav()}`
+ </main><button id="plus" class="plus hubPlus">+</button><section id="menu" class="panel menu" hidden><button id="quickNote">NOTE</button><button id="quickTask">TASK</button><button>PLAN</button><button id="quickStuff">STUFF</button><button id="quickMoney">MONEY</button></section>${nav()}`
  wire()
  q('#plus').onclick=()=>q('#menu').hidden=!q('#menu').hidden
  q('#quickTask').onclick=()=>taskModal();q('#quickStuff').onclick=()=>stuffModal();q('#quickMoney').onclick=()=>go('treasury');q('#quickNote').onclick=()=>noteTypeChooser()
  q('#openCommsHub').onclick=()=>go('notes');q('#openTreasuryHub').onclick=()=>go('treasury');q('#openCargoHub').onclick=()=>go('shopping')
- q('#manageMeds').onclick=()=>medModal()
- await Promise.all([loadCats(),bridgeTasks(),bridgeBills(),bridgeNotes(),loadHubWidget(),loadSickBay()])
+ await Promise.all([loadCats(),bridgeTasks(),bridgeBills(),bridgeNotes(),loadHubWidget()])
+ wireBridgeDrugs()
 }
 async function loadHubWidget(){
   const box=q('#miniWidget');if(!box)return
@@ -361,7 +136,7 @@ async function loadCats(){
     for(const p of (await supabase.from('profiles').select('user_id,display_name').in('user_id',users)).data||[])names[p.user_id]=p.display_name
   }
   const now=new Date(),mins=now.getHours()*60+now.getMinutes();let lateAny=false
-  box.innerHTML=(cr.data||[]).map(c=>`<article class="cat"><div class="catname">${E(c.name)}${c.nickname?` <span class="catNick">“${E(c.nickname)}”</span>`:''}</div><div class="muted">${E(c.breed)}</div><div class="bowls">${(c.cat_feeding_schedules||[]).sort((a,b)=>a.feeding_time.localeCompare(b.feeding_time)).map(s=>{
+  box.innerHTML=(cr.data||[]).map(c=>`<article class="cat"><div class="catname">${E(c.name)}</div><div class="muted">${E(c.breed)}</div><div class="bowls">${(c.cat_feeding_schedules||[]).sort((a,b)=>a.feeding_time.localeCompare(b.feeding_time)).map(s=>{
     const f=fs.find(x=>x.cat_id===c.id&&x.schedule_id===s.id),[h,m]=s.feeding_time.split(':').map(Number),late=!f&&mins>h*60+m+60
     if(late)lateAny=true
     const noteFlag=f?.note?`<div class="stamp">NOTE: ${E(f.note.length>34?f.note.slice(0,34)+'…':f.note)}</div>`:''
@@ -437,75 +212,7 @@ async function feedModal(cat,sch,time,feedingId=null){
     loadCats()
   }
 }
-async function crew(){app.innerHTML=`<main class="shell">${top('Crew')}<section class="panel invite"><div class="section-title">Household invite code</div><div class="code">${E(household.invite_code)}</div></section><h1 class="pageTitle">Crew Manifest</h1><div id="cg" class="crewgrid"></div></main>${nav()}`;wire();const ms=(await supabase.from('household_members').select('user_id').eq('household_id',household.id)).data||[],ids=ms.map(x=>x.user_id),ps=ids.length?(await supabase.from('profiles').select('*').in('user_id',ids)).data||[]:[],cs=(await supabase.from('cats').select('*').eq('household_id',household.id)).data||[];q('#cg').innerHTML=[...ps.map(p=>`<article class="panel crewcard crewHuman" tabindex="0" data-crewuser="${p.user_id}" role="button" aria-label="Open ${E(p.display_name)}'s profile"><div class="crewhead"><div class="avatar">${E((p.display_name||'?')[0])}</div><div><div class="crewname">${E(p.display_name)}</div><div class="muted">${E(p.nickname||'Human')}</div></div></div></article>`),...cs.map(c=>`<article class="panel crewcard crewHuman" tabindex="0" data-crewcat="${c.id}" role="button" aria-label="Open ${E(c.name)}'s profile"><div class="crewhead"><div class="avatar">${E((c.name||'?')[0])}</div><div><div class="crewname">${E(c.name)}</div><div class="muted">${E(c.breed||'')}${c.nickname?` · “${E(c.nickname)}”`:''}</div></div></div></article>`)].join('');qa('.crewHuman').forEach(el=>{el.onclick=()=>el.dataset.crewuser?openCrewProfile(el.dataset.crewuser):openCatProfile(el.dataset.crewcat);el.onkeydown=e=>{if(e.key==='Enter')el.dataset.crewuser?openCrewProfile(el.dataset.crewuser):openCatProfile(el.dataset.crewcat)}})}
-async function openCatProfile(catId){
- const w=document.createElement('div');w.className='modalWrap'
- w.innerHTML=`<section class="panel modal crewProfile"><div id="cpBody"><span class="muted">Reading the files…</span></div></section>`
- document.body.appendChild(w)
- w.addEventListener('click',e=>{if(e.target===w)w.remove()})
- async function load(){
-  const c=(await supabase.from('cats').select('*').eq('id',catId).maybeSingle()).data
-  if(!c){w.remove();return toast('That cat has wandered off.')}
-  const ar=await supabase.from('cat_aliases').select('*').eq('cat_id',catId).order('retired_at',{ascending:false})
-  const aliases=ar.data||[]
-  w.querySelector('#cpBody').innerHTML=`<div class="cpHead"><div class="avatar">${E((c.name||'?')[0])}</div><div><div class="crewname">${E(c.name)}</div><div class="muted">${E(c.breed||'')}${c.nickname?` · “${E(c.nickname)}”`:''}</div></div><button id="cpClose" class="detailClose" type="button" aria-label="Close">×</button></div>
-   <div class="section-title">Veteran callsigns</div>
-   ${aliases.length?aliases.map(a=>`<div class="obsItem"><div>“${E(a.alias)}”</div><div class="obsMeta">retired ${dateText(a.retired_at)}</div></div>`).join(''):`<div class="muted">No retired nicknames. ${E(c.name)} is on their first name.</div>`}
-   <button id="cpEdit" class="ghost" style="margin-top:12px" type="button">EDIT</button>
-   <div id="cpEditForm" hidden style="margin-top:10px">
-     <div class="field"><label>Name</label><input id="cpName" value="${E(c.name||'')}"></div>
-     <div class="field"><label>Breed</label><input id="cpBreed" value="${E(c.breed||'')}"></div>
-     <div class="field"><label>Nickname</label><input id="cpNick" value="${E(c.nickname||'')}"></div>
-     <button id="cpSave" class="primary" type="button">SAVE</button>
-   </div>`
-  w.querySelector('#cpClose').onclick=()=>w.remove()
-  w.querySelector('#cpEdit').onclick=()=>{const f=w.querySelector('#cpEditForm');f.hidden=!f.hidden}
-  w.querySelector('#cpSave').onclick=async()=>{
-   const nm=w.querySelector('#cpName').value.trim()||c.name,br=w.querySelector('#cpBreed').value.trim()||null,nn=w.querySelector('#cpNick').value.trim()||null
-   const r=await supabase.from('cats').update({name:nm,breed:br,nickname:nn}).eq('id',catId)
-   if(r.error)return toast('Cat edit failed.')
-   if(c.nickname&&c.nickname!==nn)await supabase.from('cat_aliases').insert({household_id:household.id,cat_id:catId,alias:c.nickname,created_by:session.user.id})
-   toast(c.nickname&&c.nickname!==nn?'Cat updated. Old callsign retired to the archive.':'Cat updated.')
-   if(active==='crew')crew()
-   load()
-  }
- }
- await load()
-}
-async function openCrewProfile(userId){
- const w=document.createElement('div');w.className='modalWrap'
- w.innerHTML=`<section class="panel modal crewProfile"><div id="cpBody"><span class="muted">Reading the files…</span></div></section>`
- document.body.appendChild(w)
- w.addEventListener('click',e=>{if(e.target===w)w.remove()})
- async function load(){
-  const p=(await supabase.from('profiles').select('*').eq('user_id',userId).maybeSingle()).data
-  if(!p){w.remove();return toast('That crew member has wandered off.')}
-  const ar=await supabase.from('profile_aliases').select('*').eq('user_id',userId).order('retired_at',{ascending:false})
-  const aliases=ar.data||[]
-  const nm=p.nickname||p.display_name||'Crew'
-  w.querySelector('#cpBody').innerHTML=`<div class="cpHead"><div class="avatar">${E((p.display_name||'?')[0])}</div><div><div class="crewname">${E(p.display_name)}</div><div class="muted">${E(p.nickname||'No nickname')}</div></div><button id="cpClose" class="detailClose" type="button" aria-label="Close">×</button></div>
-   <div class="section-title">Veteran callsigns</div>
-   ${aliases.length?aliases.map(a=>`<div class="obsItem"><div>“${E(a.alias)}”</div><div class="obsMeta">retired ${dateText(a.retired_at)}</div></div>`).join(''):`<div class="muted">No retired callsigns. ${E(nm)} is on their first name.</div>`}
-   <button id="cpEdit" class="ghost" style="margin-top:12px" type="button">EDIT</button>
-   <div id="cpEditForm" hidden style="margin-top:10px">
-     <div class="field"><label>Display name</label><input id="cpName" value="${E(p.display_name||'')}"></div>
-     <div class="field"><label>Nickname</label><input id="cpNick" value="${E(p.nickname||'')}"></div>
-     <button id="cpSave" class="primary" type="button">SAVE</button>
-   </div>`
-  w.querySelector('#cpClose').onclick=()=>w.remove()
-  w.querySelector('#cpEdit').onclick=()=>{const f=w.querySelector('#cpEditForm');f.hidden=!f.hidden}
-  w.querySelector('#cpSave').onclick=async()=>{
-   const dn=w.querySelector('#cpName').value.trim()||p.display_name,nn=w.querySelector('#cpNick').value.trim()||null
-   const r=await supabase.from('profiles').update({display_name:dn,nickname:nn}).eq('user_id',userId)
-   if(r.error)return toast('Profile edit failed.')
-   if(p.nickname&&p.nickname!==nn)await supabase.from('profile_aliases').insert({household_id:household.id,user_id:userId,alias:p.nickname,created_by:session.user.id})
-   toast(p.nickname&&p.nickname!==nn?'Profile updated. Old callsign retired to the archive.':'Profile updated.')
-   if(active==='crew')crew()
-   load()
-  }
- }
- await load()
-}
+async function crew(){app.innerHTML=`<main class="shell">${top('Crew')}<section class="panel invite"><div class="section-title">Household invite code</div><div class="code">${E(household.invite_code)}</div></section><h1 class="pageTitle">Crew Manifest</h1><div id="cg" class="crewgrid"></div></main>${nav()}`;wire();const ms=(await supabase.from('household_members').select('user_id').eq('household_id',household.id)).data||[],ids=ms.map(x=>x.user_id),ps=ids.length?(await supabase.from('profiles').select('*').in('user_id',ids)).data||[]:[],cs=(await supabase.from('cats').select('*').eq('household_id',household.id)).data||[];q('#cg').innerHTML=[...ps.map(p=>`<article class="panel crewcard"><div class="crewhead"><div class="avatar">${E((p.display_name||'?')[0])}</div><div><div class="crewname">${E(p.display_name)}</div><div class="muted">${E(p.nickname||'Human')}</div></div></div></article>`),...cs.map(c=>`<article class="panel crewcard"><div class="crewname">${E(c.name)}</div><div class="muted">${E(c.breed)}</div></article>`)].join('')}
 
 async function agenda(){
  await ensureCategories()
@@ -533,37 +240,15 @@ async function ensureShoppingLists(){
 }
 async function more(){
   app.innerHTML=`<main class="shell">${top('More')}<div class="moreHead"><span class="systemTag">SECONDARY SYSTEMS</span><h1 class="pageTitle">More</h1></div>
-  <section class="panel card consoleCard">
-    <div class="section-title">Your console</div>
-    <div class="muted">${E(profile?.display_name||'Crew')}${profile?.nickname?` · “${E(profile.nickname)}”`:''}</div>
-    <form id="profileForm" class="formGrid">
-      <div class="field"><label>Display name</label><input id="pfName" value="${E(profile?.display_name||'')}" required></div>
-      <div class="field"><label>Nickname</label><input id="pfNick" placeholder="what the crew calls you" value="${E(profile?.nickname||'')}"></div>
-      <div class="full"><button class="primary">SAVE PROFILE</button></div>
-      <p id="pfErr" class="error full"></p>
-    </form>
-    <div class="themeDeck"><div><div class="section-title">Theme</div><div class="muted">Theme follows your profile across devices.</div></div>
-      <div class="themeChoices"><button id="themeC" class="themeChoice ${profile?.ui_theme!=='J'?'selected':''}" data-theme-choice="C"><span class="themeSwatch cSwatch"></span><b>C</b></button><button id="themeJ" class="themeChoice ${profile?.ui_theme==='J'?'selected':''}" data-theme-choice="J"><span class="themeSwatch jSwatch"></span><b>J</b></button></div>
-    </div>
+  <section class="themeDeck panel card"><div><div class="section-title">Your console</div><div class="muted">Theme follows your profile across devices.</div></div>
+    <div class="themeChoices"><button id="themeC" class="themeChoice ${profile?.ui_theme!=='J'?'selected':''}" data-theme-choice="C"><span class="themeSwatch cSwatch"></span><b>C</b></button><button id="themeJ" class="themeChoice ${profile?.ui_theme==='J'?'selected':''}" data-theme-choice="J"><span class="themeSwatch jSwatch"></span><b>J</b></button></div>
   </section>
   <div class="moreGrid" style="margin-top:12px">
     <section id="openTreasury" class="panel moduleCard"><div class="moduleGlyph">◈</div><div class="section-title">Treasury</div><h2>Bills & Debt</h2><p class="muted">Tribute and dwindling horrors.</p></section>
     <section id="openLog" class="panel moduleCard"><div class="moduleGlyph">⌁</div><div class="section-title">Archives</div><h2>Captain's Log</h2><p class="muted">Permanent household lore.</p></section>
-    <section id="openCrew" class="panel moduleCard"><div class="moduleGlyph">⚑</div><div class="section-title">Crew</div><h2>Manifest</h2><p class="muted">Invite code, humans & cats, retired callsigns.</p></section>
     <section class="panel moduleCard"><div class="moduleGlyph">❄</div><div class="section-title">Cold Storage</div><h2>Freezer</h2><p class="muted">Coming next.</p></section>
   </div></main>${nav()}`
-  wire();q('#openTreasury').onclick=()=>go('treasury');q('#openLog').onclick=()=>go('log');q('#openCrew').onclick=()=>go('crew');qa('[data-theme-choice]').forEach(b=>b.onclick=()=>setTheme(b.dataset.themeChoice))
-  q('#profileForm').onsubmit=async e=>{
-    e.preventDefault()
-    const dn=q('#pfName').value.trim(),nn=q('#pfNick').value.trim()||null
-    if(!dn)return q('#pfErr').textContent='You need a display name, captain.'
-    const oldNick=profile?.nickname||null
-    const r=await supabase.from('profiles').update({display_name:dn,nickname:nn}).eq('user_id',session.user.id)
-    if(r.error)return q('#pfErr').textContent=r.error.message
-    if(oldNick&&oldNick!==nn)await supabase.from('profile_aliases').insert({household_id:household.id,user_id:session.user.id,alias:oldNick,created_by:session.user.id})
-    profile={...profile,display_name:dn,nickname:nn}
-    toast(oldNick&&oldNick!==nn?'Profile updated. Old callsign retired to the archive.':'Profile updated.');more()
-  }
+  wire();q('#openTreasury').onclick=()=>go('treasury');q('#openLog').onclick=()=>go('log');qa('[data-theme-choice]').forEach(b=>b.onclick=()=>setTheme(b.dataset.themeChoice))
 }
 async function shopping(){
   await ensureShoppingLists()
@@ -744,7 +429,7 @@ const noteErrorLines=['Something has gone tits up in Comms.','a fucky-wucky seem
 const reactionSet=['♥','HAHA','FUCK U','CAT','SUS','KISS']
 
 async function currentDisplayName(){
-  const {data}=await supabase.from('profiles').select('*').eq('user_id',session.user.id).maybeSingle()
+  const {data}=await supabase.from('profiles').select('*').eq('id',session.user.id).maybeSingle()
   return data?.nickname||data?.display_name||session.user.email?.split('@')[0]||'Crew'
 }
 async function crewProfiles(){
@@ -841,6 +526,18 @@ async function openNoteDetail(n){
  document.body.appendChild(w);w.querySelector('.detailClose').onclick=()=>w.remove()
  w.querySelectorAll('[data-dr]').forEach(b=>b.onclick=()=>reactNote(n.id,b.dataset.dr,n))
  w.querySelector('#detailOptions').onclick=()=>openBridgeMenu(w.querySelector('.noteDetail'),n)
+}
+function wireBridgeDrugs(){
+ const card=q('#bridgeDrugs');if(!card)return
+ const saved=localStorage.getItem('bridge_drugs_text')||'Suspiciously simple by design.'
+ q('#drugBridgeText').textContent=saved
+ let t,moved=false
+ const edit=()=>{const v=prompt('What should the drugs card say?',localStorage.getItem('bridge_drugs_text')||'');if(v!==null){localStorage.setItem('bridge_drugs_text',v.trim()||'Suspiciously simple by design.');q('#drugBridgeText').textContent=localStorage.getItem('bridge_drugs_text')}}
+ card.onpointerdown=()=>{moved=false;t=setTimeout(()=>{if(!moved)edit()},520)}
+ card.onpointermove=()=>{moved=true;clearTimeout(t)}
+ card.onpointerup=card.onpointercancel=()=>clearTimeout(t)
+ card.oncontextmenu=e=>{e.preventDefault();edit()}
+ card.onclick=()=>toast(localStorage.getItem('bridge_drugs_text')||'Suspiciously simple by design.')
 }
 let notesTab=localStorage.getItem('bridge_notes_tab')||'all'
 async function notes(){
@@ -1379,15 +1076,7 @@ async function trophyRoom(){
 async function captainsLog(){
   app.innerHTML=`<main class="shell">${top("Captain's Log")}<h1 class="pageTitle">Captain's Log</h1><section class="panel card"><div class="section-title">Permanent record</div><div id="logEntries">Consulting the archives…</div></section></main>${nav()}`;wire()
   const {data,error}=await supabase.from('captains_log').select('*').eq('household_id',household.id).order('created_at',{ascending:false});if(error)return noteError(error)
-  const entries=data||[]
-  if(!entries.length){q('#logEntries').innerHTML='<div class="empty">The historical record is suspiciously quiet.</div>';return}
-  const enriched=await Promise.all(entries.map(async x=>({...x,_photo:await signedNoteMedia(x.photo_path),_doodle:await signedNoteMedia(x.doodle_path)})))
-  q('#logEntries').innerHTML=enriched.map(x=>`<article class="logEntry">
-    <div class="logEntryHead"><b>${E(x.title||'Log entry')}</b><span class="muted">${E(x.author_name_snapshot||'Crew')} · ${dateText(x.created_at)} ${timeText(x.created_at)}</span></div>
-    ${x.body?`<div class="logEntryBody">${E(x.body)}</div>`:''}
-    ${x._photo?`<img class="noteMedia" src="${E(x._photo)}" alt="Photo saved to the log">`:''}
-    ${x._doodle?`<img class="noteMedia" src="${E(x._doodle)}" alt="Doodle saved to the log">`:''}
-  </article>`).join('')
+  q('#logEntries').innerHTML=data?.length?data.map(x=>`<div class="historyRow"><b>${E(x.title||'Log entry')}</b><div>${E(x.body||'')}</div><div class="muted">${E(x.author_name_snapshot||'Crew')} · ${dateText(x.created_at)} ${timeText(x.created_at)}</div></div>`).join(''):'<div class="empty">The historical record is suspiciously quiet.</div>'
 }
 
 function placeholder(t){app.innerHTML=`<main class="shell">${top(t)}<section class="panel card"><h1 class="pageTitle">${E(t)}</h1><p class="muted">Coming soon.</p></section></main>${nav()}`;wire()}
@@ -1395,11 +1084,7 @@ function render(){
 document.body.classList.remove('shoppingMode')
 if(active==='bridge')bridge();else if(active==='crew')crew();else if(active==='agenda')agenda();else if(active==='more')more();else if(active==='shopping')shopping();else if(active==='treasury')treasury();else if(active==='trophy')trophyRoom();else if(active==='notes')notes();else if(active==='log')captainsLog();else{active='bridge';bridge()}
 }
-function subscribe(){if(channel)supabase.removeChannel(channel);channel=supabase.channel('bridge-'+household.id).on('postgres_changes',{event:'*',schema:'public',table:'cat_feedings',filter:`household_id=eq.${household.id}`},()=>{if(active==='bridge')loadCats()})
-.on('postgres_changes',{event:'*',schema:'public',table:'medications',filter:`household_id=eq.${household.id}`},()=>{if(active==='bridge')loadSickBay();sbRerender?.()})
-.on('postgres_changes',{event:'*',schema:'public',table:'medication_schedules',filter:`household_id=eq.${household.id}`},()=>{if(active==='bridge')loadSickBay();sbRerender?.()})
-.on('postgres_changes',{event:'*',schema:'public',table:'medication_logs',filter:`household_id=eq.${household.id}`},()=>{if(active==='bridge')loadSickBay();sbRerender?.()})
-.on('postgres_changes',{event:'*',schema:'public',table:'health_observations',filter:`household_id=eq.${household.id}`},()=>{sbRerender?.()}).on('postgres_changes',{event:'*',schema:'public',table:'tasks',filter:`household_id=eq.${household.id}`},()=>{if(active==='agenda')drawAgenda();if(active==='bridge')bridgeTasks()}).on('postgres_changes',{event:'*',schema:'public',table:'task_categories',filter:`household_id=eq.${household.id}`},()=>{if(active==='agenda')drawAgenda()})
+function subscribe(){if(channel)supabase.removeChannel(channel);channel=supabase.channel('bridge-'+household.id).on('postgres_changes',{event:'*',schema:'public',table:'cat_feedings',filter:`household_id=eq.${household.id}`},()=>{if(active==='bridge')loadCats()}).on('postgres_changes',{event:'*',schema:'public',table:'tasks',filter:`household_id=eq.${household.id}`},()=>{if(active==='agenda')drawAgenda();if(active==='bridge')bridgeTasks()}).on('postgres_changes',{event:'*',schema:'public',table:'task_categories',filter:`household_id=eq.${household.id}`},()=>{if(active==='agenda')drawAgenda()})
 .on('postgres_changes',{event:'*',schema:'public',table:'shopping_items',filter:`household_id=eq.${household.id}`},payload=>{
   if(active==='shopping'){
     if(payload.eventType==='INSERT' && payload.new.created_by!==session.user.id){
