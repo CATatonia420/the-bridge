@@ -642,6 +642,11 @@ body::before{
 .notifPrefs{display:grid;gap:8px;margin:10px 0}
 @media(max-width:560px){.notifPanel{position:fixed;left:8px;right:8px;top:64px;width:auto}}
 
-/* ===== v0.9 — sci-fi notification icon ===== */
+/* ===== v0.9 — sci-fi notification icon (target reticle) ===== */
 .notifBell{display:flex;align-items:center;justify-content:center;gap:0}
 .notifIconSvg{color:var(--accent);display:block;filter:drop-shadow(0 0 5px var(--accent-glow))}
+.reticleRing{fill:none;stroke:currentColor;stroke-width:1.7;stroke-linejoin:round}
+.pulseDot{fill:currentColor;opacity:.55;transform-box:fill-box;transform-origin:center}
+.notifBell.hasUnread .pulseDot{opacity:1;animation:notifPulse 1.5s ease-in-out infinite}
+@keyframes notifPulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.3;transform:scale(1.6)}}
+@media (prefers-reduced-motion:reduce){.notifBell.hasUnread .pulseDot{animation:none}}

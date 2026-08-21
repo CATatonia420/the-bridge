@@ -57,7 +57,7 @@ const nav=()=>`<nav class="nav hubNav">
     <span class="navIcon">${icon}</span><span class="navLabel">${label}</span>
   </button>`).join('')}
 </nav>`
-const notifIconSvg='<svg class="notifIconSvg" viewBox="0 0 24 24" width="19" height="19" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M8.3 15.4 a4.6 4.6 0 0 1 7.4 0"/><path d="M5.1 11.2 a8.9 8.9 0 0 1 13.8 0"/><path d="M1.9 7.1 a13.2 13.2 0 0 1 20.2 0"/></g><circle cx="12" cy="19.4" r="1.7" fill="currentColor"><animate attributeName="opacity" values="1;.3;1" dur="2.4s" repeatCount="indefinite"/></circle></svg>'
+const notifIconSvg='<svg class="notifIconSvg" viewBox="0 0 24 24" aria-hidden="true"><path class="reticleRing" d="M12 2.6 L20 12 L12 21.4 L4 12 Z"/><circle class="pulseDot" cx="12" cy="12" r="2.1"/></svg>'
 const top=t=>`<header class="top"><div><div class="brand">${E(t||'The Bridge')}</div><div class="muted">${E(household?.name||'')}</div></div><div class="topRight"><div class="notifWrap"><button id="notifBell" class="notifBell" aria-label="Notifications" aria-expanded="false">${notifIconSvg}<span id="notifBadge" class="notifBadge" hidden>0</span></button><div id="notifPanel" class="notifPanel" hidden><div class="notifHead"><b>TRANSMISSIONS</b><button id="notifMarkAll" type="button">MARK ALL READ</button></div><div id="notifFeed" class="notifFeed">Scanning…</div><div class="notifFoot"><button id="notifPrefs" type="button">what pings you</button></div></div></div><button id="logout" class="ghost">Log out</button></div></header>`
 function wire(){
  q('#logout')?.addEventListener('click',()=>supabase.auth.signOut())
@@ -348,7 +348,8 @@ async function refreshNotifBadge(){
   if(keys.length){const{data}=await supabase.from('notification_reads').select('event_key').eq('user_id',session.user.id).in('event_key',keys);for(const r of(data||[]))notifReads.add(r.event_key)}
   const unread=items.filter(i=>!notifReads.has(i.key)).length
   badge.textContent=unread;badge.hidden=unread===0
- }catch(e){badge.hidden=true}
+  q('#notifBell')?.classList.toggle('hasUnread',unread>0)
+ }catch(e){badge.hidden=true;q('#notifBell')?.classList.remove('hasUnread')}
 }
 function renderNotifFeed(){
  const feed=q('#notifFeed');if(!feed)return
@@ -358,7 +359,7 @@ function renderNotifFeed(){
 async function markNotifRead(key){
  await supabase.from('notification_reads').insert({user_id:session.user.id,event_key:key,read_at:new Date().toISOString()},{onConflict:'user_id,event_key',ignoreDuplicates:true})
  notifReads.add(key)
- const unread=notifItems.filter(i=>!notifReads.has(i.key)).length,badge=q('#notifBadge');if(badge){badge.textContent=unread;badge.hidden=unread===0}
+ const unread=notifItems.filter(i=>!notifReads.has(i.key)).length,badge=q('#notifBadge');if(badge){badge.textContent=unread;badge.hidden=unread===0;q('#notifBell')?.classList.toggle('hasUnread',unread>0)}
  const row=qa('.notifRow').find(b=>b.dataset.nkey===key);if(row)row.classList.remove('unread')
 }
 async function markAllNotifsRead(){
