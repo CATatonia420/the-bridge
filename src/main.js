@@ -437,7 +437,41 @@ async function feedModal(cat,sch,time,feedingId=null){
     loadCats()
   }
 }
-async function crew(){app.innerHTML=`<main class="shell">${top('Crew')}<section class="panel invite"><div class="section-title">Household invite code</div><div class="code">${E(household.invite_code)}</div></section><h1 class="pageTitle">Crew Manifest</h1><div id="cg" class="crewgrid"></div></main>${nav()}`;wire();const ms=(await supabase.from('household_members').select('user_id').eq('household_id',household.id)).data||[],ids=ms.map(x=>x.user_id),ps=ids.length?(await supabase.from('profiles').select('*').in('user_id',ids)).data||[]:[],cs=(await supabase.from('cats').select('*').eq('household_id',household.id)).data||[];q('#cg').innerHTML=[...ps.map(p=>`<article class="panel crewcard crewHuman" tabindex="0" data-crewuser="${p.user_id}" role="button" aria-label="Open ${E(p.display_name)}'s profile"><div class="crewhead"><div class="avatar">${E((p.display_name||'?')[0])}</div><div><div class="crewname">${E(p.display_name)}</div><div class="muted">${E(p.nickname||'Human')}</div></div></div></article>`),...cs.map(c=>`<article class="panel crewcard"><div class="crewname">${E(c.name)}</div><div class="muted">${E(c.breed)}</div></article>`)].join('');qa('.crewHuman').forEach(el=>{el.onclick=()=>openCrewProfile(el.dataset.crewuser);el.onkeydown=e=>{if(e.key==='Enter')openCrewProfile(el.dataset.crewuser)}})}
+async function crew(){app.innerHTML=`<main class="shell">${top('Crew')}<section class="panel invite"><div class="section-title">Household invite code</div><div class="code">${E(household.invite_code)}</div></section><h1 class="pageTitle">Crew Manifest</h1><div id="cg" class="crewgrid"></div></main>${nav()}`;wire();const ms=(await supabase.from('household_members').select('user_id').eq('household_id',household.id)).data||[],ids=ms.map(x=>x.user_id),ps=ids.length?(await supabase.from('profiles').select('*').in('user_id',ids)).data||[]:[],cs=(await supabase.from('cats').select('*').eq('household_id',household.id)).data||[];q('#cg').innerHTML=[...ps.map(p=>`<article class="panel crewcard crewHuman" tabindex="0" data-crewuser="${p.user_id}" role="button" aria-label="Open ${E(p.display_name)}'s profile"><div class="crewhead"><div class="avatar">${E((p.display_name||'?')[0])}</div><div><div class="crewname">${E(p.display_name)}</div><div class="muted">${E(p.nickname||'Human')}</div></div></div></article>`),...cs.map(c=>`<article class="panel crewcard crewHuman" tabindex="0" data-crewcat="${c.id}" role="button" aria-label="Open ${E(c.name)}'s profile"><div class="crewhead"><div class="avatar">${E((c.name||'?')[0])}</div><div><div class="crewname">${E(c.name)}</div><div class="muted">${E(c.breed||'')}${c.nickname?` · “${E(c.nickname)}”`:''}</div></div></div></article>`)].join('');qa('.crewHuman').forEach(el=>{el.onclick=()=>el.dataset.crewuser?openCrewProfile(el.dataset.crewuser):openCatProfile(el.dataset.crewcat);el.onkeydown=e=>{if(e.key==='Enter')el.dataset.crewuser?openCrewProfile(el.dataset.crewuser):openCatProfile(el.dataset.crewcat)}})}
+async function openCatProfile(catId){
+ const w=document.createElement('div');w.className='modalWrap'
+ w.innerHTML=`<section class="panel modal crewProfile"><div id="cpBody"><span class="muted">Reading the files…</span></div></section>`
+ document.body.appendChild(w)
+ w.addEventListener('click',e=>{if(e.target===w)w.remove()})
+ async function load(){
+  const c=(await supabase.from('cats').select('*').eq('id',catId).maybeSingle()).data
+  if(!c){w.remove();return toast('That cat has wandered off.')}
+  const ar=await supabase.from('cat_aliases').select('*').eq('cat_id',catId).order('retired_at',{ascending:false})
+  const aliases=ar.data||[]
+  w.querySelector('#cpBody').innerHTML=`<div class="cpHead"><div class="avatar">${E((c.name||'?')[0])}</div><div><div class="crewname">${E(c.name)}</div><div class="muted">${E(c.breed||'')}${c.nickname?` · “${E(c.nickname)}”`:''}</div></div><button id="cpClose" class="detailClose" type="button" aria-label="Close">×</button></div>
+   <div class="section-title">Veteran callsigns</div>
+   ${aliases.length?aliases.map(a=>`<div class="obsItem"><div>“${E(a.alias)}”</div><div class="obsMeta">retired ${dateText(a.retired_at)}</div></div>`).join(''):`<div class="muted">No retired nicknames. ${E(c.name)} is on their first name.</div>`}
+   <button id="cpEdit" class="ghost" style="margin-top:12px" type="button">EDIT</button>
+   <div id="cpEditForm" hidden style="margin-top:10px">
+     <div class="field"><label>Name</label><input id="cpName" value="${E(c.name||'')}"></div>
+     <div class="field"><label>Breed</label><input id="cpBreed" value="${E(c.breed||'')}"></div>
+     <div class="field"><label>Nickname</label><input id="cpNick" value="${E(c.nickname||'')}"></div>
+     <button id="cpSave" class="primary" type="button">SAVE</button>
+   </div>`
+  w.querySelector('#cpClose').onclick=()=>w.remove()
+  w.querySelector('#cpEdit').onclick=()=>{const f=w.querySelector('#cpEditForm');f.hidden=!f.hidden}
+  w.querySelector('#cpSave').onclick=async()=>{
+   const nm=w.querySelector('#cpName').value.trim()||c.name,br=w.querySelector('#cpBreed').value.trim()||null,nn=w.querySelector('#cpNick').value.trim()||null
+   const r=await supabase.from('cats').update({name:nm,breed:br,nickname:nn}).eq('id',catId)
+   if(r.error)return toast('Cat edit failed.')
+   if(c.nickname&&c.nickname!==nn)await supabase.from('cat_aliases').insert({household_id:household.id,cat_id:catId,alias:c.nickname,created_by:session.user.id})
+   toast(c.nickname&&c.nickname!==nn?'Cat updated. Old callsign retired to the archive.':'Cat updated.')
+   if(active==='crew')crew()
+   load()
+  }
+ }
+ await load()
+}
 async function openCrewProfile(userId){
  const w=document.createElement('div');w.className='modalWrap'
  w.innerHTML=`<section class="panel modal crewProfile"><div id="cpBody"><span class="muted">Reading the files…</span></div></section>`
