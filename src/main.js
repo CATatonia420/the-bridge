@@ -319,20 +319,18 @@ async function bridge(){
    <section class="hubPanel commsConsole"><div class="hubPanelHead clickableHead" id="openCommsHub"><span>04</span><b>COMMS</b><small>NOTICE DECK</small></div><div id="bridgeNotes" class="bridgeNotes"><span class="muted">Checking the post-its…</span></div></section>
    <section class="hubPanel systemsConsole"><div class="hubPanelHead"><span>05</span><b>SYSTEMS</b><small>LOW-LEVEL NOISE</small></div>
       <div class="systemTiles">
-        <button class="systemTile" id="bridgeDrugs" type="button"><span class="tileLamp"></span><b>DRUGS</b><small id="drugBridgeText">Suspiciously simple.</small></button>
         <button class="systemTile" id="openTreasuryHub" type="button"><span class="tileLamp"></span><b>TREASURY</b><small id="bridgeBills">Sweeping radar…</small></button>
         <button class="systemTile" id="openCargoHub" type="button"><span class="tileLamp"></span><b>CARGO</b><small>Shopping manifest</small></button>
       </div>
    </section>
  </section>
- </main><button id="plus" class="plus hubPlus">+</button><section id="menu" class="panel menu" hidden><button id="quickNote">NOTE</button><button id="quickTask">TASK</button><button>PLAN</button><button id="quickStuff">STUFF</button><button id="quickMoney">MONEY</button></section>${nav()}`
+ </main><button id="plus" class="plus hubPlus">+</button><section id="menu" class="panel menu" hidden><button id="quickNote">NOTE</button><button id="quickTask">TASK</button><button id="quickStuff">STUFF</button><button id="quickMoney">MONEY</button></section>${nav()}`
  wire()
  q('#plus').onclick=()=>q('#menu').hidden=!q('#menu').hidden
  q('#quickTask').onclick=()=>taskModal();q('#quickStuff').onclick=()=>stuffModal();q('#quickMoney').onclick=()=>go('treasury');q('#quickNote').onclick=()=>noteTypeChooser()
  q('#openCommsHub').onclick=()=>go('notes');q('#openTreasuryHub').onclick=()=>go('treasury');q('#openCargoHub').onclick=()=>go('shopping')
  q('#manageMeds').onclick=()=>medModal()
  await Promise.all([loadCats(),bridgeTasks(),bridgeBills(),bridgeNotes(),loadHubWidget(),loadSickBay()])
- wireBridgeDrugs()
 }
 async function loadHubWidget(){
   const box=q('#miniWidget');if(!box)return
@@ -439,7 +437,41 @@ async function feedModal(cat,sch,time,feedingId=null){
     loadCats()
   }
 }
-async function crew(){app.innerHTML=`<main class="shell">${top('Crew')}<section class="panel invite"><div class="section-title">Household invite code</div><div class="code">${E(household.invite_code)}</div></section><h1 class="pageTitle">Crew Manifest</h1><div id="cg" class="crewgrid"></div></main>${nav()}`;wire();const ms=(await supabase.from('household_members').select('user_id').eq('household_id',household.id)).data||[],ids=ms.map(x=>x.user_id),ps=ids.length?(await supabase.from('profiles').select('*').in('user_id',ids)).data||[]:[],cs=(await supabase.from('cats').select('*').eq('household_id',household.id)).data||[];q('#cg').innerHTML=[...ps.map(p=>`<article class="panel crewcard"><div class="crewhead"><div class="avatar">${E((p.display_name||'?')[0])}</div><div><div class="crewname">${E(p.display_name)}</div><div class="muted">${E(p.nickname||'Human')}</div></div></div></article>`),...cs.map(c=>`<article class="panel crewcard"><div class="crewname">${E(c.name)}</div><div class="muted">${E(c.breed)}</div></article>`)].join('')}
+async function crew(){app.innerHTML=`<main class="shell">${top('Crew')}<section class="panel invite"><div class="section-title">Household invite code</div><div class="code">${E(household.invite_code)}</div></section><h1 class="pageTitle">Crew Manifest</h1><div id="cg" class="crewgrid"></div></main>${nav()}`;wire();const ms=(await supabase.from('household_members').select('user_id').eq('household_id',household.id)).data||[],ids=ms.map(x=>x.user_id),ps=ids.length?(await supabase.from('profiles').select('*').in('user_id',ids)).data||[]:[],cs=(await supabase.from('cats').select('*').eq('household_id',household.id)).data||[];q('#cg').innerHTML=[...ps.map(p=>`<article class="panel crewcard crewHuman" tabindex="0" data-crewuser="${p.user_id}" role="button" aria-label="Open ${E(p.display_name)}'s profile"><div class="crewhead"><div class="avatar">${E((p.display_name||'?')[0])}</div><div><div class="crewname">${E(p.display_name)}</div><div class="muted">${E(p.nickname||'Human')}</div></div></div></article>`),...cs.map(c=>`<article class="panel crewcard"><div class="crewname">${E(c.name)}</div><div class="muted">${E(c.breed)}</div></article>`)].join('');qa('.crewHuman').forEach(el=>{el.onclick=()=>openCrewProfile(el.dataset.crewuser);el.onkeydown=e=>{if(e.key==='Enter')openCrewProfile(el.dataset.crewuser)}})}
+async function openCrewProfile(userId){
+ const w=document.createElement('div');w.className='modalWrap'
+ w.innerHTML=`<section class="panel modal crewProfile"><div id="cpBody"><span class="muted">Reading the files…</span></div></section>`
+ document.body.appendChild(w)
+ w.addEventListener('click',e=>{if(e.target===w)w.remove()})
+ async function load(){
+  const p=(await supabase.from('profiles').select('*').eq('user_id',userId).maybeSingle()).data
+  if(!p){w.remove();return toast('That crew member has wandered off.')}
+  const ar=await supabase.from('profile_aliases').select('*').eq('user_id',userId).order('retired_at',{ascending:false})
+  const aliases=ar.data||[]
+  const nm=p.nickname||p.display_name||'Crew'
+  w.querySelector('#cpBody').innerHTML=`<div class="cpHead"><div class="avatar">${E((p.display_name||'?')[0])}</div><div><div class="crewname">${E(p.display_name)}</div><div class="muted">${E(p.nickname||'No nickname')}</div></div><button id="cpClose" class="detailClose" type="button" aria-label="Close">×</button></div>
+   <div class="section-title">Veteran callsigns</div>
+   ${aliases.length?aliases.map(a=>`<div class="obsItem"><div>“${E(a.alias)}”</div><div class="obsMeta">retired ${dateText(a.retired_at)}</div></div>`).join(''):`<div class="muted">No retired callsigns. ${E(nm)} is on their first name.</div>`}
+   <button id="cpEdit" class="ghost" style="margin-top:12px" type="button">EDIT</button>
+   <div id="cpEditForm" hidden style="margin-top:10px">
+     <div class="field"><label>Display name</label><input id="cpName" value="${E(p.display_name||'')}"></div>
+     <div class="field"><label>Nickname</label><input id="cpNick" value="${E(p.nickname||'')}"></div>
+     <button id="cpSave" class="primary" type="button">SAVE</button>
+   </div>`
+  w.querySelector('#cpClose').onclick=()=>w.remove()
+  w.querySelector('#cpEdit').onclick=()=>{const f=w.querySelector('#cpEditForm');f.hidden=!f.hidden}
+  w.querySelector('#cpSave').onclick=async()=>{
+   const dn=w.querySelector('#cpName').value.trim()||p.display_name,nn=w.querySelector('#cpNick').value.trim()||null
+   const r=await supabase.from('profiles').update({display_name:dn,nickname:nn}).eq('user_id',userId)
+   if(r.error)return toast('Profile edit failed.')
+   if(p.nickname&&p.nickname!==nn)await supabase.from('profile_aliases').insert({household_id:household.id,user_id:userId,alias:p.nickname,created_by:session.user.id})
+   toast(p.nickname&&p.nickname!==nn?'Profile updated. Old callsign retired to the archive.':'Profile updated.')
+   if(active==='crew')crew()
+   load()
+  }
+ }
+ await load()
+}
 
 async function agenda(){
  await ensureCategories()
@@ -483,17 +515,20 @@ async function more(){
   <div class="moreGrid" style="margin-top:12px">
     <section id="openTreasury" class="panel moduleCard"><div class="moduleGlyph">◈</div><div class="section-title">Treasury</div><h2>Bills & Debt</h2><p class="muted">Tribute and dwindling horrors.</p></section>
     <section id="openLog" class="panel moduleCard"><div class="moduleGlyph">⌁</div><div class="section-title">Archives</div><h2>Captain's Log</h2><p class="muted">Permanent household lore.</p></section>
+    <section id="openCrew" class="panel moduleCard"><div class="moduleGlyph">⚑</div><div class="section-title">Crew</div><h2>Manifest</h2><p class="muted">Invite code, humans & cats, retired callsigns.</p></section>
     <section class="panel moduleCard"><div class="moduleGlyph">❄</div><div class="section-title">Cold Storage</div><h2>Freezer</h2><p class="muted">Coming next.</p></section>
   </div></main>${nav()}`
-  wire();q('#openTreasury').onclick=()=>go('treasury');q('#openLog').onclick=()=>go('log');qa('[data-theme-choice]').forEach(b=>b.onclick=()=>setTheme(b.dataset.themeChoice))
+  wire();q('#openTreasury').onclick=()=>go('treasury');q('#openLog').onclick=()=>go('log');q('#openCrew').onclick=()=>go('crew');qa('[data-theme-choice]').forEach(b=>b.onclick=()=>setTheme(b.dataset.themeChoice))
   q('#profileForm').onsubmit=async e=>{
     e.preventDefault()
     const dn=q('#pfName').value.trim(),nn=q('#pfNick').value.trim()||null
     if(!dn)return q('#pfErr').textContent='You need a display name, captain.'
+    const oldNick=profile?.nickname||null
     const r=await supabase.from('profiles').update({display_name:dn,nickname:nn}).eq('user_id',session.user.id)
     if(r.error)return q('#pfErr').textContent=r.error.message
+    if(oldNick&&oldNick!==nn)await supabase.from('profile_aliases').insert({household_id:household.id,user_id:session.user.id,alias:oldNick,created_by:session.user.id})
     profile={...profile,display_name:dn,nickname:nn}
-    toast('Profile updated.');more()
+    toast(oldNick&&oldNick!==nn?'Profile updated. Old callsign retired to the archive.':'Profile updated.');more()
   }
 }
 async function shopping(){
@@ -772,18 +807,6 @@ async function openNoteDetail(n){
  document.body.appendChild(w);w.querySelector('.detailClose').onclick=()=>w.remove()
  w.querySelectorAll('[data-dr]').forEach(b=>b.onclick=()=>reactNote(n.id,b.dataset.dr,n))
  w.querySelector('#detailOptions').onclick=()=>openBridgeMenu(w.querySelector('.noteDetail'),n)
-}
-function wireBridgeDrugs(){
- const card=q('#bridgeDrugs');if(!card)return
- const saved=localStorage.getItem('bridge_drugs_text')||'Suspiciously simple by design.'
- q('#drugBridgeText').textContent=saved
- let t,moved=false
- const edit=()=>{const v=prompt('What should the drugs card say?',localStorage.getItem('bridge_drugs_text')||'');if(v!==null){localStorage.setItem('bridge_drugs_text',v.trim()||'Suspiciously simple by design.');q('#drugBridgeText').textContent=localStorage.getItem('bridge_drugs_text')}}
- card.onpointerdown=()=>{moved=false;t=setTimeout(()=>{if(!moved)edit()},520)}
- card.onpointermove=()=>{moved=true;clearTimeout(t)}
- card.onpointerup=card.onpointercancel=()=>clearTimeout(t)
- card.oncontextmenu=e=>{e.preventDefault();edit()}
- card.onclick=()=>toast(localStorage.getItem('bridge_drugs_text')||'Suspiciously simple by design.')
 }
 let notesTab=localStorage.getItem('bridge_notes_tab')||'all'
 async function notes(){
@@ -1322,7 +1345,15 @@ async function trophyRoom(){
 async function captainsLog(){
   app.innerHTML=`<main class="shell">${top("Captain's Log")}<h1 class="pageTitle">Captain's Log</h1><section class="panel card"><div class="section-title">Permanent record</div><div id="logEntries">Consulting the archives…</div></section></main>${nav()}`;wire()
   const {data,error}=await supabase.from('captains_log').select('*').eq('household_id',household.id).order('created_at',{ascending:false});if(error)return noteError(error)
-  q('#logEntries').innerHTML=data?.length?data.map(x=>`<div class="historyRow"><b>${E(x.title||'Log entry')}</b><div>${E(x.body||'')}</div><div class="muted">${E(x.author_name_snapshot||'Crew')} · ${dateText(x.created_at)} ${timeText(x.created_at)}</div></div>`).join(''):'<div class="empty">The historical record is suspiciously quiet.</div>'
+  const entries=data||[]
+  if(!entries.length){q('#logEntries').innerHTML='<div class="empty">The historical record is suspiciously quiet.</div>';return}
+  const enriched=await Promise.all(entries.map(async x=>({...x,_photo:await signedNoteMedia(x.photo_path),_doodle:await signedNoteMedia(x.doodle_path)})))
+  q('#logEntries').innerHTML=enriched.map(x=>`<article class="logEntry">
+    <div class="logEntryHead"><b>${E(x.title||'Log entry')}</b><span class="muted">${E(x.author_name_snapshot||'Crew')} · ${dateText(x.created_at)} ${timeText(x.created_at)}</span></div>
+    ${x.body?`<div class="logEntryBody">${E(x.body)}</div>`:''}
+    ${x._photo?`<img class="noteMedia" src="${E(x._photo)}" alt="Photo saved to the log">`:''}
+    ${x._doodle?`<img class="noteMedia" src="${E(x._doodle)}" alt="Doodle saved to the log">`:''}
+  </article>`).join('')
 }
 
 function placeholder(t){app.innerHTML=`<main class="shell">${top(t)}<section class="panel card"><h1 class="pageTitle">${E(t)}</h1><p class="muted">Coming soon.</p></section></main>${nav()}`;wire()}
@@ -1331,9 +1362,10 @@ document.body.classList.remove('shoppingMode')
 if(active==='bridge')bridge();else if(active==='crew')crew();else if(active==='agenda')agenda();else if(active==='more')more();else if(active==='shopping')shopping();else if(active==='treasury')treasury();else if(active==='trophy')trophyRoom();else if(active==='notes')notes();else if(active==='log')captainsLog();else{active='bridge';bridge()}
 }
 function subscribe(){if(channel)supabase.removeChannel(channel);channel=supabase.channel('bridge-'+household.id).on('postgres_changes',{event:'*',schema:'public',table:'cat_feedings',filter:`household_id=eq.${household.id}`},()=>{if(active==='bridge')loadCats()})
-.on('postgres_changes',{event:'*',schema:'public',table:'medications',filter:`household_id=eq.${household.id}`},()=>{if(active==='bridge')loadSickBay()})
-.on('postgres_changes',{event:'*',schema:'public',table:'medication_logs',filter:`household_id=eq.${household.id}`},()=>{if(active==='bridge')loadSickBay()})
-.on('postgres_changes',{event:'*',schema:'public',table:'health_observations',filter:`household_id=eq.${household.id}`},()=>{}).on('postgres_changes',{event:'*',schema:'public',table:'tasks',filter:`household_id=eq.${household.id}`},()=>{if(active==='agenda')drawAgenda();if(active==='bridge')bridgeTasks()}).on('postgres_changes',{event:'*',schema:'public',table:'task_categories',filter:`household_id=eq.${household.id}`},()=>{if(active==='agenda')drawAgenda()})
+.on('postgres_changes',{event:'*',schema:'public',table:'medications',filter:`household_id=eq.${household.id}`},()=>{if(active==='bridge')loadSickBay();sbRerender?.()})
+.on('postgres_changes',{event:'*',schema:'public',table:'medication_schedules',filter:`household_id=eq.${household.id}`},()=>{if(active==='bridge')loadSickBay();sbRerender?.()})
+.on('postgres_changes',{event:'*',schema:'public',table:'medication_logs',filter:`household_id=eq.${household.id}`},()=>{if(active==='bridge')loadSickBay();sbRerender?.()})
+.on('postgres_changes',{event:'*',schema:'public',table:'health_observations',filter:`household_id=eq.${household.id}`},()=>{sbRerender?.()}).on('postgres_changes',{event:'*',schema:'public',table:'tasks',filter:`household_id=eq.${household.id}`},()=>{if(active==='agenda')drawAgenda();if(active==='bridge')bridgeTasks()}).on('postgres_changes',{event:'*',schema:'public',table:'task_categories',filter:`household_id=eq.${household.id}`},()=>{if(active==='agenda')drawAgenda()})
 .on('postgres_changes',{event:'*',schema:'public',table:'shopping_items',filter:`household_id=eq.${household.id}`},payload=>{
   if(active==='shopping'){
     if(payload.eventType==='INSERT' && payload.new.created_by!==session.user.id){

@@ -592,3 +592,18 @@ body::before{
 .consoleCard{max-width:660px}
 .consoleCard .themeDeck{margin-top:14px;padding-top:14px;border-top:1px solid #30363a}
 @media(max-width:520px){.consoleCard .themeDeck{display:grid}}
+
+/* ===== v0.8 — Captain's Log entries show full note content ===== */
+.logEntry{border:1px solid #343b3f;border-radius:12px;background:#0a0d10;padding:14px;margin:10px 0}
+.logEntryHead{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:baseline}
+.logEntryHead b{font-size:1.02rem;color:var(--accent)}
+.logEntryBody{white-space:pre-wrap;margin-top:8px;font-size:1rem;line-height:1.5;color:var(--text)}
+.logEntry .noteMedia{margin-top:10px}
+
+/* ===== v0.8 — Crew manifest & veteran callsigns ===== */
+.crewHuman{cursor:pointer}
+.crewHuman:hover,.crewHuman:focus-visible{border-color:var(--accent);outline:2px solid var(--accent);outline-offset:2px}
+.crewProfile{max-width:520px}
+.cpHead{display:flex;align-items:center;gap:12px;margin-bottom:6px}
+.cpHead .crewname{font-size:1.2rem}
+.cpHead .detailClose{position:static;margin-left:auto}
