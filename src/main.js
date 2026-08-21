@@ -361,7 +361,7 @@ async function loadCats(){
     for(const p of (await supabase.from('profiles').select('user_id,display_name').in('user_id',users)).data||[])names[p.user_id]=p.display_name
   }
   const now=new Date(),mins=now.getHours()*60+now.getMinutes();let lateAny=false
-  box.innerHTML=(cr.data||[]).map(c=>`<article class="cat"><div class="catname">${E(c.name)}</div><div class="muted">${E(c.breed)}</div><div class="bowls">${(c.cat_feeding_schedules||[]).sort((a,b)=>a.feeding_time.localeCompare(b.feeding_time)).map(s=>{
+  box.innerHTML=(cr.data||[]).map(c=>`<article class="cat"><div class="catname">${E(c.name)}${c.nickname?` <span class="catNick">“${E(c.nickname)}”</span>`:''}</div><div class="muted">${E(c.breed)}</div><div class="bowls">${(c.cat_feeding_schedules||[]).sort((a,b)=>a.feeding_time.localeCompare(b.feeding_time)).map(s=>{
     const f=fs.find(x=>x.cat_id===c.id&&x.schedule_id===s.id),[h,m]=s.feeding_time.split(':').map(Number),late=!f&&mins>h*60+m+60
     if(late)lateAny=true
     const noteFlag=f?.note?`<div class="stamp">NOTE: ${E(f.note.length>34?f.note.slice(0,34)+'…':f.note)}</div>`:''

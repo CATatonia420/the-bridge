@@ -607,3 +607,6 @@ body::before{
 .cpHead{display:flex;align-items:center;gap:12px;margin-bottom:6px}
 .cpHead .crewname{font-size:1.2rem}
 .cpHead .detailClose{position:static;margin-left:auto}
+
+/* ===== v0.8 — cat nickname on the main board ===== */
+.catNick{font-weight:700;color:var(--muted);font-size:.82em}
